@@ -1,0 +1,27 @@
+* BNG intro
+  * like a train
+  * but sometimes we want a different vehicle
+* python is the future
+  * numpy + matplotlib - matlab replacement...
+    * x = linspace(0, 2*pi, 100); y = sin(x); plot(x,y)
+      * ipython -pylab
+      * reinteract - from numeric import *; from replot import *;
+* pysb - translation of BNG into literal python syntax
+  * allows us to integrate model itself into code
+    * interactive debugging and interrogation
+    * higher-order programming
+    * apply varied calibration methods
+    * develop new types of modeling - hybrid stochastic (receptor/raft)
+  * uses bng itself for now, but may replace it later on
+
+* egfr model
+  * reinteract - graphical rule output
+  * show positional vs. keyword args
+  * sympy - generate equations via bng
+
+* bcl2 model - higher-order programming
+  1. explicit full monomer/rule defs
+  2. helper functions to simplify
+    * can_activate
+    * dimerize
+    * helpers can be model-specific or generalized in a module

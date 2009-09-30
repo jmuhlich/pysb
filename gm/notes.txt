@@ -9,6 +9,7 @@
 * pysb - translation of BNG into literal python syntax
   * allows us to integrate model itself into code
     * interactive debugging and interrogation
+    * graphical tools ok to start, but quickly need more power
     * higher-order programming
     * apply varied calibration methods
     * develop new types of modeling - hybrid stochastic (receptor/raft)

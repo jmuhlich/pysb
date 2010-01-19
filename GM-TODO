@@ -1,0 +1,16 @@
+* earm v1.0
+  - implement
+  - develop relevant helper functions
+  - check against matlab eqs
+  - use in examples
+
+* regression to data
+  - math model
+  - observables
+  - objective function
+
+* graphical output
+  - monomer pattern
+  - complex pattern (set of MPs with bonds drawn)
+  - reaction pattern (set of CPs)
+  - rule (two RPs, reversible/irreversible, 1 or 2 parameters)

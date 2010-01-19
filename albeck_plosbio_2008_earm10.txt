@@ -1,0 +1,1555 @@
+function ProtocolS1
+%This Matlab file contains the EARM v1.0 model 
+%and simulation routines for the figures in the manuscript
+
+%Choose which figures to run; enter 1 to run figure, 0 to omit.
+Fig_4A=0;
+Fig_4B=0; 
+Fig_5=1; 
+Fig_6AB=0; 
+Fig_6C=0; 
+Fig_6D=0; 
+Fig_7A=0; 
+Fig_8A=0;
+Fig_9ABCEF=0;
+Fig_9D=0;
+Fig_10A=0;
+Fig_10BCD=0;
+
+Fig_S4=0;
+Fig_S5=0; 
+
+fignum=1;
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%             Initial Conditions                     %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% Non-zero initial conditions (in molecules per cell):
+Lsat    = 6E4; % saturating level of ligand (corresponding to ~1000 ng/ml SuperKiller TRAIL)
+L50     = 3000; % baseline level of ligand for most experiments (corresponding to 50 ng/ml SuperKiller TRAIL)
+RnosiRNA= 200; % TRAIL receptor (for experiments not involving siRNA)
+RsiRNA  = 100000; % TRAIL receptor for experiments involving siRNA; this is set higher than in non-siRNA experiments to reflect the experimentally observed sensitization caused by both targeting and non-targeting siRNA transfection, which is believed to occur at least partly through the upregulation of death receptors by an interferon pathway.
+flip  = 1E2;  % Flip
+pC8   = 2E4;  % procaspase-8 (pro-C8)
+Bar   = 1E3;  % Bifunctional apoptosis regulator
+pC3   = 1E4;  % procaspase-3 (pro-C3)
+pC6   = 1E4;  % procaspase-6 (pro-C6)  
+XIAP  = 1E5;  % X-linked inhibitor of apoptosis protein  
+PARP  = 1E6;  % C3* substrate
+Bid   = 4E4;  % Bid
+Bcl2c = 2E4;  % cytosolic Bcl-2
+Bax   = 1E5;  % Bax
+Bcl2  = 2E4;  % mitochondrial Bcl-2  
+M     = 5E5;  % mitochondrial binding sites for activated Bax
+CytoC = 5E5;  % cytochrome c
+Smac  = 1E5;  % Smac    
+pC9   = 1E5;  % procaspase-9 (pro-C9)
+Apaf  = 1E5;  % Apaf-1
+
+Lfactor=L50/50; %relationship of ligand concentration in the model (in # molecules/cell) to actual TRAIL concentration (in ng/ml)
+
+transloc=.01;% rate of translocation between the cytosolic and mitochondrial compartments
+
+v=.07; % mitochondria compartment volume/cell volume
+
+% Initialize the full vector of initial conditions (IC) 
+IC=zeros(58,1);
+IC(1) =L50;    IC(2) =RnosiRNA;    IC(5) =flip; IC(7) =pC8;  IC(10)=Bar;   
+IC(12)=pC3;  IC(15)=pC6;  IC(19)=XIAP; IC(21)=PARP; IC(24)=Bid;  
+IC(27)=Bcl2c; IC(29)=Bax;  IC(33)=Bcl2; IC(39)=M;    IC(42)=CytoC; 
+IC(45)=Smac; IC(49)=Apaf; IC(52)=pC9;  
+
+% Experimentally determined values for knockdown and overexpression
+IOE =  12; % Bcl-2 OE
+sXKD = .06; % Strong XIAP KD
+wXKD = .13; % Weak XIAP KD
+BKD =  .04; % Bid KD
+AKD =  .1;  % Apaf-1 KD
+DKD =  .11; % Smac KD
+C6K =  .11; % proC6 knockdown
+C8K =  .03;  % proC8 knockdown
+
+YIC=zeros(58,1);
+YIC=IC(1:58);
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                  Rate constants                    %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% L + pR <--> L:pR --> R* % original, fixed below
+% L + pR <--> L:pR --> DISC
+k(1)=4E-7; k_(1)=1E-3; kc(1)=1E-5;
+
+% flip + DISC <-->  flip:DISC  
+k(2)=1E-6; k_(2)=1E-3;
+
+% pC8 + DISC <--> DISC:pC8 --> C8 + DISC
+k(3)=1E-6; k_(3)=1E-3; kc(3)=1;
+
+% C8 + BAR <--> BAR:C8 
+k(4)=1E-6; k_(4)=1E-3;
+
+% pC3 + C8 <--> pC3:C8 --> C3 + C8
+k(5)=1E-7; k_(5)=1E-3; kc(5)=1;
+
+% pC6 + C3 <--> pC6:C3 --> C6 + C3
+k(6)=1E-6; k_(6)=1E-3; kc(6)=1;
+
+% pC8 + C6 <--> pC8:C6 --> C8 + C6
+k(7)=3E-8; k_(7)=1E-3; kc(7)=1; 
+
+% XIAP + C3 <--> XIAP:C3 --> XIAP + C3_U
+k(8)=2E-6; k_(8)=1E-3;  kc(8)=.1;
+
+% PARP + C3 <--> PARP:C3 --> CPARP + C3
+k(9)=1E-6; k_(9)=1E-2; kc(9)=1;
+
+% Bid + C8 <--> Bid:C8 --> tBid + C8
+k(10)=1E-7; k_(10)=1E-3; kc(10)=1;
+
+% tBid + Bcl2c <-->  tBid:Bcl2c  
+k(11)=1E-6; k_(11)=1E-3; 
+
+% Bax + tBid <--> Bax:tBid --> aBax + tBid 
+k(12)=1E-7; k_(12)=1E-3; kc(12)=1;
+
+% aBax <-->  MBax 
+k(13)=transloc; k_(13)=transloc;
+
+% MBax + Bcl2 <-->  MBax:Bcl2  
+k(14)=1E-6; k_(14)=1E-3; 
+
+%%% MBax + MBax <-->  MBax:MBax == Bax2  % original, fixed below
+% MBax + MBax <-->  Bax2
+k(15)=1E-6; k_(15)=1E-3;
+
+%%% Bax2 + Bcl2 <-->  MBax2:Bcl2  % original, fixed below
+% Bax2 + Bcl2 <-->  Bax2:Bcl2  
+k(16)=1E-6; k_(16)=1E-3; 
+
+%%% Bax2 + Bax2 <-->  Bax2:Bax2 == Bax4  % original, fixed below
+% Bax2 + Bax2 <-->  Bax4
+k(17)=1E-6; k_(17)=1E-3;
+
+%%% Bax4 + Bcl2 <-->  MBax4:Bcl2  % original, fixed below
+% Bax4 + Bcl2 <-->  Bax4:Bcl2  
+k(18)=1E-6; k_(18)=1E-3; 
+
+%%% Bax4 + Mit0 <-->  Bax4:Mito -->  AMito  % original, fixed below
+% Bax4 + Mito <-->  Bax4:Mito -->  AMito  
+k(19)=1E-6; k_(19)=1E-3; kc(19)=1;
+
+%%% AMit0 + mCtoC <-->  AMito:mCytoC --> AMito + ACytoC  % original, fixed below
+% AMito + mCytoC <-->  AMito:mCytoC --> AMito + ACytoC  
+k(20)=2E-6; k_(20)=1E-3; kc(20)=10; 
+
+%%% AMit0 + mSMac <-->  AMito:mSmac --> AMito + ASMAC  % original, fixed below
+% AMito + mSmac <-->  AMito:mSmac --> AMito + ASmac  
+k(21)=2E-6; k_(21)=1E-3; kc(21)=10; 
+
+% ACytoC <-->  cCytoC
+k(22)=transloc; k_(22)=transloc;
+
+%%% Apaf + cCytoC <-->  Apaf:cCytoC  % original, fixed below
+% Apaf + cCytoC <-->  Apaf:cCytoC --> aApaf + cCytoC
+k(23)=5E-7; k_(23)=1E-3; kc(23)=1; 
+
+%%% Apaf:cCytoC + Procasp9 <-->  Apoptosome  % original, fixed below
+% aApaf + pC9 <-->  Apop
+k(24)=5E-8; k_(24)=1E-3;
+
+%%% Apop + pCasp3 <-->  Apop:cCasp3 --> Apop + Casp3  % original, fixed below
+% Apop + pC3 <-->  Apop:pC3 --> Apop + C3
+k(25)=5E-9; k_(25)=1E-3; kc(25)=1;
+
+% ASmac <-->  cSmac
+k(26)=transloc; k_(26)=transloc;
+
+% Apop + XIAP <-->  Apop:XIAP  
+k(27)=2E-6; k_(27)=1E-3;
+
+% cSmac + XIAP <-->  cSmac:XIAP  
+k(28)=7E-6; k_(28)=1E-3;
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                 Figure Simulations                 %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%        
+        
+if Fig_4A, % Dose response
+    tf=20*3600; % seconds
+    samp_freq=tf/60; % accurate to min
+    dt=(tf-0)/samp_freq;
+    tt=0:dt:tf;
+    options=odeset('AbsTol',1E-10,'RelTol',1E-8,'maxstep',dt);
+    
+    Ls_exp=[1,1/4,1/20,1/100,1/500].*Lsat;
+    Td_exp=[144.2,178.7,236,362.5,656.5];
+    Td_std=[32.5,32.2,36.4,78.6,171.6];
+    Ts_exp=[21.6,23.8,27.2,22.0,19.0];
+    Ts_std=[9.5,9.5,12.9,7.7,10.5];
+
+    CVenv=0.2;
+    
+    Ls=floor(logspace(1,5,40));
+    tn=1:1:length(tt)-1;
+    
+    for i=1:length(Ls),
+        x0=IC;
+        x0(1)=Ls(i);
+        
+        [t x]=ode15s(@rhs,tt,x0,options,k,k_,kc,v);
+        
+        fs(i)=(x(1,21)-x(end,21))./x(1,21);
+        dP=60.*( x(tn(:),21) -x(tn(:)+1,21) )./(dt*x(1,21)); % min
+        [dPmax,ttn]=max(dP);
+        Ts(i)=1/dPmax; % min
+        Td(i)=tt(ttn)./60; % min
+        
+    end,
+        
+    figure(fignum),clf,
+    subplot(3,1,1),
+    plot(Ls./Lfactor,fs,'b-'),
+    ylabel('f'),
+    xlabel('TRAIL (ng/ml)'),
+    title('Figure 2B, CPARP - WT'),
+    set(gca,'XScale','log'),
+    axis([min(Ls)./Lfactor,max(Ls)./Lfactor,-0.05,1.05]),
+    
+    subplot(3,1,2),hold on,
+    plot(Ls./Lfactor,Td,'g-',Ls./Lfactor,(1-CVenv)*Td,'b-',Ls./Lfactor,(1+CVenv)*Td),
+    plot(Ls_exp./Lfactor,Td_exp,'go'),
+    for i=1:length(Td_std),
+        line([Ls_exp(i),Ls_exp(i)]./Lfactor,[Td_exp(i)-Td_std(i),Td_exp(i)+Td_std(i)],'color','g'),
+    end,
+    ylabel('Td (min)'),
+    xlabel('TRAIL (ng/ml)'),
+    set(gca,'XScale','log'),
+    axis([min(Ls)./Lfactor,max(Ls)./Lfactor,0,1000]),
+    
+    subplot(3,1,3), hold on
+    plot(Ls./Lfactor,Ts,'r-'),
+    plot(Ls_exp./Lfactor,Ts_exp,'ro'),
+    for i=1:length(Td_std),
+         line([Ls_exp(i),Ls_exp(i)]./Lfactor,[Ts_exp(i)-Ts_std(i),Ts_exp(i)+Ts_std(i)],'color','r'),
+    end,
+    ylabel('Ts (min)'),
+    xlabel('TRAIL (ng/ml)'),
+    set(gca,'XScale','log'),
+    axis([min(Ls)./Lfactor,max(Ls)./Lfactor,-2,100]),
+
+    hold off,
+    
+    fignum=fignum+1;
+    
+    save Fig2B_Data Ls fs Td Ts
+        
+    clear x samp_freq dt options Ls tn dP dPmax ttn fs Ts Td x0 tt
+        
+end, % Fig_4A
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+if Fig_4B
+    
+    tf=6*3600; % seconds
+    samp_freq=tf/60; % accurate to min
+    dt=(tf-0)/samp_freq;
+    tt=0:dt:tf;
+    options=odeset('AbsTol',1E-10,'RelTol',1E-8,'maxstep',dt);
+              
+    figure(fignum),clf,
+    x0=IC;
+    [t x]=ode15s(@rhs,tt,x0,options,k,k_,kc,v);
+    
+    ICsub=(x(1,24)-x(:,24))./x(1,24);
+    ECsub=(x(1,21)-x(:,21))./x(1,21);
+    MOMP=(x(1,45)-x(:,45))./x(1,45);
+    
+    figure(fignum),clf,
+    plot(tt./3600,ICsub,'b-',tt./3600,ECsub,'g-',tt./3600,MOMP,'r-');
+ 
+    legend('Cleaved Bid (IC substrate)', 'Cleaved PARP (EC substrate)', 'released Smac (MOMP)');
+    axis([0,tf/3600,-0.05,1.05]),
+    title('Fig 4D');
+    fignum=fignum+1;
+
+end  % Fig_4B
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+if Fig_5, 
+
+    figure(fignum),clf,
+
+    tf=6*3600; % seconds
+    samp_freq=tf/60; % accurate to min
+    dt=(tf-0)/samp_freq;
+    tt=0:dt:tf;
+    options=odeset('AbsTol',1E-10,'RelTol',1E-8,'maxstep',dt);
+    
+    dataTs=[15, 15, 15, 15, 90, 100, 15, 100, 50, 15];
+    dataTd=[70, 80, 400, 400, 400, 100, 90, 150,110, 70];
+    dataf=[1,1,1,1,0.04, 0.2, 1, 0.15, 0.3, 1];
+    
+    Rs=   [1,  1,  1,  1,  1,  1,   1,   1,   1,   1]; 
+    pC6s= [1,C6K,  1,  1,  1,  1,   1,   1,   1,   1];
+    pC8s= [1,  1,C8K,  1,  1,  1,   1,   1,   1,   1];
+    Bids= [1,  1,  1,BKD,  1,  1,   1,   1,   1,   1];
+    Bcl2s=[1,  1,  1,  1,IOE,  1,   1, IOE, IOE,   1];
+    Smacs=[1,  1,  1,  1,  1,DKD,   1,   1,   1, DKD];
+    XIAPs=[1,  1,  1,  1,  1,  1,wXKD,wXKD,sXKD,wXKD];
+    
+    figure(fignum),clf,
+
+    for i=1:length(Rs)
+
+        x0=IC;
+        x0(2)=Rs(i)*RsiRNA;
+        x0(15)=pC6s(i)*pC6;
+        x0(7)=pC8s(i)*pC8;
+        x0(24)=Bids(i)*Bid;
+        x0(33)=Bcl2s(i)*Bcl2;
+        x0(45)=Smacs(i)*Smac;
+        x0(19)=XIAPs(i)*XIAP;
+        
+        tn=1:1:length(tt)-1;
+        [t x]=ode15s(@rhs,tt,x0,options,k,k_,kc,v);
+        CP=( x(1,21) -x(:,21) )./x(1,21);
+        dCPWT=( x(tn(:),21) -x(tn(:)+1,21) )./(dt.*x(1,21));
+        [dCPMax,tdN]=max(dCPWT);
+        simTs(i)=1./dCPMax./60;
+        simTd(i)=tt(tdN)./60;
+        simf(i)=CP(end);
+        
+        subplot(10,3,(i-1)*3+1), hold on
+        
+        axis([0, 10, 0, 10])
+        set(gca, 'XTickLabel',[])
+        set(gca, 'YTickLabel',[])
+        
+        text(0.5,8,sprintf('Data:\nT_s=%2.2f, T_d=%2.2f, f=%2.2f ',dataTs(i),dataTd(i),dataf(i)),'FontSize',6)
+        text(0.5,3,sprintf('Sim:\nT_s=%2.2f, T_d=%2.2f, f=%2.2f ',simTs(i),simTd(i),simf(i)),'FontSize',6)
+        
+        subplot(10,3,(i-1)*3+2), hold on
+        plot(tt./3600,CP,'r-');
+        
+        bt=linspace(360,1);
+        by=zeros(100,1);
+        for j=1:100
+             by(j)=(dataf(i)-dataf(i)/(1+exp((bt(j)-dataTd(i))/(dataTs(i)/4))));
+        end
+        plot(bt/60,by,'b-');
+        axis([0,tf/3600,-0.05,1.05])
+        set(gca, 'XTick', [0 1.5 3 4.5 6])
+        set(gca, 'XTickLabel',[])
+       clear CP dCPWT dCPMax tdN 
+    end
+  
+
+    % Add noSiRNA curve to control plot
+    x0=IC;
+    tn=1:1:length(tt)-1;
+    [t x]=ode15s(@rhs,tt,x0,options,k,k_,kc,v);
+    CP=( x(1,21) -x(:,21) )./x(1,21);
+    subplot(10,3,2), hold on
+    plot(tt./3600,CP,'m-');
+    
+    % column3: compare data and simulated histograms
+    channels=linspace(0,4,1024);
+    % cells is the number of cells in the population
+    cells=10000;
+
+    switchstdev=10;
+    delaystdev=40;
+    noisevariance=0.4;
+
+
+    histimepoint=[90,90,90,180,180,180,90,180,180,90];
+    numtimepts=4;
+    timespacing=90;
+
+
+    % background fluorescence, which is added to the signal of each cell
+    background=10;
+
+    % amplification represents signal amplification by the flow cytometer
+    amplification=1E3;
+
+    for j=1:length(simTs);
+        sTs=simTs(j)+switchstdev*randn(cells,1);
+        sTd=simTd(j)+delaystdev*randn(cells,1) ;
+
+        measuredsignals=zeros(cells, numtimepts);
+
+        for timept=1:numtimepts
+            t=(timept-1)*timespacing;
+            for i=1:cells  % loop through each cell
+                measuredsignals(i)=lognrnd(0,noisevariance)*((simf(j)-simf(j)/(1+exp((t-sTd(i))/(sTs(i)./4)))).*amplification+background);  %calculate the signal at that time point for each cell
+            end 
+            if (t==histimepoint(j))
+               histsignals=measuredsignals; 
+            end
+
+
+            % set gates and compute frequencies
+
+            neg_start=1;
+            neg_end=420;
+            int_start=421;
+            int_end=580;
+            pos_start=581;
+            pos_end=1024;
+
+            temphist=hist(log10(measuredsignals),channels);
+            frequencies(1,timept)=sum(temphist(neg_start:neg_end));
+            frequencies(2,timept)=sum(temphist(int_start:int_end));
+            frequencies(3,timept)=sum(temphist(pos_start:pos_end));
+
+
+        end
+
+        subplot(10,3,(j-1)*3+3), hold on
+        histy=120;
+
+        % parameters for colored bars that denote gate placement
+        bar_height=110;
+        negbarx=[neg_start, neg_end];
+        negbary=[bar_height,bar_height];
+        intbarx=[int_start, int_end];
+        intbary=[bar_height, bar_height];
+        posbarx=[pos_start, pos_end];
+        posbary=[bar_height, bar_height];
+
+        p=hist(log10(histsignals),channels);
+        hold on;
+
+
+        % draw bars
+        plot(negbarx,negbary,'g','LineWidth',2);
+        plot(intbarx,intbary,'y','LineWidth',2);
+        plot(posbarx,posbary,'k','LineWidth',2);
+        plot(p,'r');
+        
+        axis([0,1024,0,histy]);
+        set(gca,'xtick',[0,256,512,768,1024]);
+        set(gca,'XTickLabel',[]),
+
+    
+    end;
+    
+    fignum=fignum+1;
+    
+    clear j tdCC3 tdCP dCC3 dCP dCC3Tot dCC3TotMax tdN dCPMax dCP is ans transloc dt i options P50Test samp_freq tt x x0 Ls Rs XIAPs Smacs Bids Bcl2s Apafs AKD BKD XKD a1 dty DKD optionsy IOE samp_freqy y y0 tfy tty sXKD StrTitle wXKD z z0 
+    
+
+
+    
+end, % Fig_5
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+if Fig_6AB, 
+    
+    clear YIC
+    
+    tf=6*3600;
+    samp_freq=tf/60;
+    dt=(tf-0)/samp_freq;
+    tt=0:dt:tf;
+    options=odeset('AbsTol',1E-10,'RelTol',1E-8,'maxstep',dt);
+    
+    ICnum=[7,24,29,29,45,19,12,12,21];
+    
+    x0=IC;
+    x0(15)=0; %set pC6=0; no feedback
+    [t x]=ode15s(@rhs,tt,x0,options,k,k_,kc,v);
+
+    y=zeros(length(tt),10);
+
+    y(:,1)=x(:,9)+x(:,11)+x(:,13)+x(:,25); % CC8
+    y(:,2)=x(:,26)+x(:,28)+x(:,30); % tBid
+    y(:,3)=x(:,32)+x(:,34)+2.*x(:,35)+2.*x(:,36)+...
+        +4.*x(:,37)+4.*x(:,38)+4.*x(:,40)+4.*x(:,41); % smBax
+    y(:,4)=x(:,33); %sBcl2
+    y(:,5)=x(:,41)+x(:,43)+x(:,46); % sMito
+    y(:,6)=x(:,55)+x(:,57); % sSmac
+    y(:,7)=x(:,57); % sSmacXIAP
+    y(:,8)=x(:,14)+x(:,16)+x(:,22); % sC3
+    y(:,9)=x(:,20); % sC3XIAP
+    y(:,10)=x(:,23); % sCP
+
+    count=1;
+    for i=1:10,
+        ymax(i)=max(y(:,i));
+        if i~=4,
+            Ymax(count)=ymax(i);
+            YIC(count)=x(1,ICnum(count));
+            YmaxWT(count)=ymax(i);
+            count=count+1;
+        end,
+    end,
+
+    ystr=['C8       ',
+        'tBid     ',
+        'mBax     ',
+        'Bcl2     ',
+        'Mito     ',
+        'Smac     ',
+        'Smac:XIAP',
+        'CC3      ',
+        'CC3:XIAP ',
+        'CP       '];
+
+    figure(fignum),clf,
+    for i=1:10,
+        subplot(5,2,i),
+        plot(tt./3600,y(:,i)),
+        ylabel(ystr(i,:)),
+        if or(i==9,i==10),
+            xlabel('time (hrs)'),
+        end,
+        if i==1,
+            title(sprintf('Fig 6B')),
+        end,
+    end,
+
+
+    fignum=fignum+1;
+    figure(fignum),clf,
+    plot(tt./3600,10*y(:,1),'-',...
+        tt./3600,y(:,2),'-',...
+        tt./3600,y(:,3),'-',...
+        tt./3600,y(:,4),'-',...
+        tt./3600,y(:,5),'-',...
+        tt./3600,y(:,6),'-',...
+        tt./3600,y(:,7),'-',...
+        tt./3600,10*y(:,8),'-',...
+        tt./3600,1000*y(:,9),'-',...
+        tt./3600,0.1*y(:,10),'-'),
+    xlabel('time (hrs)'),
+    title(sprintf('Fig 6A')),
+    legend('C8*','tBid','mBax','free Bcl2','Mito pores','Smac','Smac:XIAP','C3','C3:XIAP','cPARP',...
+        'location','northwest');
+
+    fignum=fignum+1;
+       
+    clear y tt x x0 options samp_freq dt ystr 
+    
+end, % Fig_6AB
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+if Fig_S4, % same as 6AB, but with feedback included.
+    
+    clear YIC
+    
+    tf=6*3600;
+    samp_freq=tf/60;
+    dt=(tf-0)/samp_freq;
+    tt=0:dt:tf;
+    options=odeset('AbsTol',1E-10,'RelTol',1E-8,'maxstep',dt);
+    
+    ICnum=[7,24,29,29,45,19,12,12,21];
+    
+    x0=IC;
+    [t x]=ode15s(@rhs,tt,x0,options,k,k_,kc,v);
+
+    y=zeros(length(tt),10);
+
+    y(:,1)=x(:,9)+x(:,11)+x(:,13)+x(:,25); % CC8
+    y(:,2)=x(:,26)+x(:,28)+x(:,30); % tBid
+    y(:,3)=x(:,32)+x(:,34)+2.*x(:,35)+2.*x(:,36)+...
+        +4.*x(:,37)+4.*x(:,38)+4.*x(:,40)+4.*x(:,41); % smBax
+    y(:,4)=x(:,33); %sBcl2
+    y(:,5)=x(:,41)+x(:,43)+x(:,46); % sMito
+    y(:,6)=x(:,55)+x(:,57); % sSmac
+    y(:,7)=x(:,57); % sSmacXIAP
+    y(:,8)=x(:,14)+x(:,16)+x(:,22); % sC3
+    y(:,9)=x(:,20); % sC3XIAP
+    y(:,10)=x(:,23); % sCP
+
+    count=1;
+    for i=1:10,
+        ymax(i)=max(y(:,i));
+        if i~=4,
+            Ymax(count)=ymax(i);
+            YIC(count)=x(1,ICnum(count));
+            YmaxWT(count)=ymax(i);
+            count=count+1;
+        end,
+    end,
+
+    ystr=['C8       ',
+        'tBid     ',
+        'mBax     ',
+        'Bcl2     ',
+        'Mito     ',
+        'Smac     ',
+        'Smac:XIAP',
+        'CC3      ',
+        'CC3:XIAP ',
+        'CP       '];
+
+    figure(fignum),clf,
+    for i=1:10,
+        subplot(10,1,i),
+        plot(tt./3600,y(:,i)),
+        set(gca,'XTickLabel', [])
+        ylabel(ystr(i,:)),
+        if i==1,
+            title(sprintf('Fig S4B')),
+        end,
+    end,
+
+
+    fignum=fignum+1;
+    figure(fignum),clf,
+    plot(tt./3600,5*y(:,1),'-',...
+        tt./3600,y(:,2),'-',...
+        tt./3600,y(:,3),'-',...
+        tt./3600,y(:,4),'-',...
+        tt./3600,y(:,5),'-',...
+        tt./3600,y(:,6),'-',...
+        tt./3600,y(:,7),'-',...
+        tt./3600,10*y(:,8),'-',...
+        tt./3600,1000*y(:,9),'-',...
+        tt./3600,0.1*y(:,10),'-'),
+    xlabel('time (hrs)'),
+    title(sprintf('Fig S4A')),
+    legend('C8*(x5)','tBid','mBax','free Bcl2','Mito pores','Smac','Smac:XIAP','C3(x10)','C3:XIAP(x1000)','cPARP(x0.1)',...
+        'location','northwest');
+
+    fignum=fignum+1;
+       
+    clear y tt x x0 options samp_freq dt ystr
+
+    
+end, % Fig_S4
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+if Fig_6C,     
+    tf=24*3600;  
+    samp_freq=tf/3; 
+    dt=(tf-0)/samp_freq;
+    tt=0:dt:tf;
+    tn=1:1:length(tt)-1;
+    
+    options=odeset('AbsTol',1E-10,'RelTol',1E-8,'maxstep',dt);
+        
+    figure(fignum), hold on
+
+            x0=IC;
+            x0(15)=0; %set pC6=0; no feedback
+            [t x]=ode15s(@rhs,tt,x0,options,k,k_,kc,v);
+            
+            Pores=x(:,41)+x(:,43)+x(:,46);
+            AllBaxM=x(:,31)+x(:,32)+x(:,34)+2*x(:,35)+2*x(:,36)+4*x(:,37)+4*x(:,38)+4*x(:,41)+4*x(:,43)+4*x(:,46);
+            AllSmacCytoC=(x(:,42)+x(:,45))./(x(1,42)+x(1,45));
+            
+            actC8=x(1,7)-x(:,7);
+            actBid=x(1,24)-x(:,24);
+            actBax=x(1,29)-x(:,29);
+            plot(tt./3600,actC8,'b',tt./3600,actBid,'g',tt./3600,actBax,'k',tt./3600,Pores,'r',tt./3600,2.*AllSmacCytoC,'m')
+    
+    axis([0 6 -0.05 2.05])
+   
+   
+    clear Is CPs CP_data L_data R_data CPWT tt x x0 options samp_freq dt 
+    
+    fignum=fignum+1;
+    
+
+    
+end, % Fig_6C
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+if Fig_6D, 
+    tf=6*3600; % seconds
+    samp_freq=tf/60;
+    dt=(tf-0)/samp_freq;
+    tt=0:dt:tf;
+    tn=1:1:length(tt)-1;
+    
+    options=odeset('AbsTol',1E-10,'RelTol',1E-8,'maxstep',dt);
+        
+    figure(fignum), clf, hold on
+
+    x0=IC;
+    x0(15)=0; %set pC6=0; no feedback
+    [t x]=ode15s(@rhs,tt,x0,options,k,k_,kc,v);
+
+    allPores=x(:,41)+x(:,43)+x(:,46);
+    busyPores=x(:,43)+x(:,46);
+    relSmacCyC=1-(x(:,42)+x(:,45))./(x(1,42)+x(1,45));
+    allSmacCyC=(x(:,42)+x(:,45));
+    dSmacCyC=-[diff(allSmacCyC);0];
+    sum(dSmacCyC)
+    subplot(4,1,1)
+    plot(tt./3600,allPores,'g',tt./3600,busyPores,'r')
+    axis([0 6 -1000 2.1E4])
+    
+    subplot(4,1,2)
+    plot(tt./3600,allPores,'g',tt./3600,busyPores,'r')
+    axis([3 4 -10 210])
+    
+    subplot(4,1,3)
+    plot(tt./3600,relSmacCyC,'m')
+    axis([0 6 -0.05 1.05])
+    
+    subplot(4,1,4)
+    plot(tt./3600,dSmacCyC,'r')
+    axis([0 6 -0.4E4 8.4E4])
+    
+    clear Is CPs CP_data L_data R_data CPWT tt x x0 options samp_freq dt allPores busyPores allSmacCyC 
+    
+    fignum=fignum+1;
+        
+end, % Fig_6D
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+if Fig_S5, 
+    tf=8*3600; % seconds
+    samp_freq=tf/60;
+    dt=(tf-0)/samp_freq;
+    tt=0:dt:tf;
+    tn=1:1:length(tt)-1;
+    
+    options=odeset('AbsTol',1E-10,'RelTol',1E-8,'maxstep',dt);
+        
+    figure(fignum), hold on
+
+    x0=IC;
+    x0(15)=0; %set pC6=0; no feedback
+    x0(45)=1E9; % set Smac very high
+    x0(42)=0;
+    [t x]=ode15s(@rhs,tt,x0,options,k,k_,kc,v);
+
+    allPores=x(:,41)+x(:,43)+x(:,46);
+    busyPores=x(:,43)+x(:,46);
+    relSmacCyC=1-(x(:,42)+x(:,45))./(x(1,42)+x(1,45));
+    allSmacCyC=(x(:,42)+x(:,45));
+    dSmacCyC=-[diff(allSmacCyC);0];
+
+    subplot(3,1,1)
+    plot(tt./3600,allPores,'g',tt./3600,busyPores,'r')
+    axis([0 8 -1000 2.1E4])
+    
+  
+    subplot(3,1,2)
+    plot(tt./3600,relSmacCyC,'m')
+    axis([0 8 -0.05 1.05])
+    
+    subplot(3,1,3)
+    plot(tt./3600,dSmacCyC,'r')
+    axis([0 8 -0.1E7 2.1E7])
+    
+    clear Is CPs CP_data L_data R_data CPWT tt x x0 options samp_freq dt allPores busyPores allSmacCyC 
+    
+    fignum=fignum+1;
+    
+end, % Fig_S5
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+if Fig_7A, %
+            
+    tf=24*3600; % 
+    samp_freq=tf/60; %
+    dt=(tf-0)/samp_freq
+    tt=0:dt:tf;
+    tn=1:1:length(tt)-1;
+    
+    options=odeset('AbsTol',1E-10,'RelTol',1E-8,'maxstep',dt);
+        
+    % baseline
+    x0=IC;
+    x0(1)=L50/25; %2 ng/ml TRAIL
+    
+    [t x]=ode15s(@rhs,tt,x0,options,k,k_,kc,v);
+
+    ICsub=1-x(:,24)./x(1,24)
+    % The "early" phase of IC substrate cleavage is estimated as
+    % the average slope in the interval between 1% and 15% of full cleavage.
+    % The "late" phase is estimated as the average slope in the interval 
+    % between 60% and 90% of full cleavage
+    t1=find(ICsub>0.01,1,'first') *dt./3600;
+    t15=find(ICsub>0.15,1,'first')*dt./3600;
+    t60=find(ICsub>0.6,1,'first')*dt./3600;
+    t90=find(ICsub>0.9,1,'first')*dt./3600;
+
+    earlyT=t15-t1;
+    lateT=t90-t60;
+
+    earlyS=14/earlyT;
+    lateS=30/lateT;
+
+    earlySlopes(1)=earlyS
+    lateSlopes(1)=lateS;
+
+    rel=(x(:,42)+x(:,45))./(x(1,42)+x(1,45))
+    dR=diff(rel)
+    dRmax=-min(dR)
+    relTs(1)=1/dRmax % min
+
+    %casp6 KO
+    x0=IC;
+    x0(1)=L50/25; %2 ng/ml TRAIL
+    x0(15)=0;  % set C6 to 0 to remove all feedback
+    
+
+    [t x]=ode15s(@rhs,tt,x0,options,k,k_,kc,v);
+
+    ICsub=1-x(:,24)./x(1,24);
+    t1=find(ICsub>0.01,1,'first')*dt./3600;
+    t15=find(ICsub>0.15,1,'first')*dt./3600;
+    t60=find(ICsub>0.6,1,'first')*dt./3600;
+    t90=find(ICsub>0.9,1,'first')*dt./3600;
+
+    earlyT=t15-t1;
+    lateT=t90-t60;
+
+    earlyS=14/earlyT;
+    lateS=30/lateT;
+
+    earlySlopes(2)=earlyS;
+    lateSlopes(2)=lateS;
+
+    rel=(x(:,42)+x(:,45))./(x(1,42)+x(1,45))
+    dR=diff(rel)
+    dRmax=-min(dR)
+    relTs(2)=1/dRmax % min
+
+    %smacKD
+
+    x0=IC;
+    x0(1)=L50/25; %2 ng/ml TRAIL
+    x0(45)=0.1*Smac; %simulate Smac knockdown
+
+    [t x]=ode15s(@rhs,tt,x0,options,k,k_,kc,v);
+
+    ICsub=1-x(:,24)./x(1,24);
+    t1=find(ICsub>0.01,1,'first')*dt./3600;
+    t15=find(ICsub>0.15,1,'first')*dt./3600;
+    t60=find(ICsub>0.6,1,'first')*dt./3600;
+    t90=find(ICsub>0.9,1,'first')*dt./3600;
+
+    earlyT=t15-t1;
+    lateT=t90-t60;
+
+    earlyS=14/earlyT;
+    lateS=30/lateT;
+
+    earlySlopes(3)=earlyS
+    lateSlopes(3)=lateS
+
+    rel=(x(:,42)+x(:,45))./(x(1,42)+x(1,45));
+    dR=diff(rel);
+    dRmax=-min(dR);
+    relTs(3)=1/dRmax % min
+            
+    bar([earlySlopes, lateSlopes]);
+    figure()
+    bar(relTs);
+   
+    clear Is CPs CP_data L_data R_data CPWT tt x x0 options samp_freq dt 
+    
+    fignum=fignum+1;
+    
+%    who,
+    
+end, % Fig_7A
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+if Fig_8A %
+  
+    Ls=floor(logspace(1,4,4));
+     
+    tf=24*3600; % 
+    samp_freq=tf/60; 
+    dt=(tf-0)/samp_freq;
+    tt=0:dt:tf;
+    tn=1:1:length(tt)-1;
+    
+    options=odeset('AbsTol',1E-10,'RelTol',1E-8,'maxstep',dt);
+    windowsize=50;
+    
+    figure(), hold on
+    for i=1:length(Ls),
+        
+        x0=IC;
+        x0(1)=Ls(i);
+
+        [t x]=ode15s(@rhs,tt,x0,options,k,k_,kc,v);
+
+        rel=(x(:,42)+x(:,45))./(x(1,42)+x(1,45));
+
+        m50=find(rel<0.5,1,'first');
+        tBid=1-x(:,24)./x(1,24);
+        tmax=max(size(tt))
+        plot(tt(1:m50)./3600,tBid(1:m50),'b',tt(m50:tmax)./3600,tBid(m50:tmax),'k')
+        plot(tt(m50-windowsize:m50+windowsize)./3600,rel(m50-windowsize:m50+windowsize),'r')
+    end,
+        
+    axis([0 12 -0.1 1.1])
+   
+    figure(), hold on
+    for i=1:length(Ls),
+        x0=IC;
+        x0(1)=Ls(i);
+
+        [t x]=ode15s(@rhs,tt,x0,options,k,k_,kc,v);
+
+        rel=(x(:,42)+x(:,45))./(x(1,42)+x(1,45));
+
+        m50=find(rel<0.5,1,'first');
+        b2=x(:,33)./x(1,33);
+        tmax=max(size(tt))
+        plot(tt(1:m50)./3600,b2(1:m50),'g',tt(m50:tmax)./3600,b2(m50:tmax),'y')
+        plot(tt(m50-windowsize:m50+windowsize)./3600,rel(m50-windowsize:m50+windowsize),'r')
+    end,
+        
+    axis([0 12 -0.1 1.1])   
+       
+    clear Is CPs CP_data L_data R_data CPWT tt x x0 options samp_freq dt 
+    
+    fignum=fignum+1;
+    
+%    who,
+    
+end, % Fig_8A
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+if Fig_9ABCEF, 
+    
+    tf=6*3600;
+    samp_freq=tf;
+    dt=(tf-0)/samp_freq;
+    tt=0:dt:tf;
+    options=odeset('AbsTol',1E-10,'RelTol',1E-8,'maxstep',dt);
+    
+    HighSmac=5E5;
+    
+    tn=1:1:length(tt)-1;
+    
+    StrTitle=[sprintf('Fig S7: WT            '),
+              sprintf('pC9(0)=0              '),
+              sprintf('Apop + pCasp3, k(25)=0'),
+              sprintf('Apop + XIAP, k(27)=0  '), 
+              sprintf('Apaf(0)=0             ')];
+ 
+    pC9s=[1,0,1,1,1].*pC9;
+    k25temp=k(25);
+    k25s=[1,1,0,1,1].*k(25);
+    k27temp=k(27);
+    k27s=[1,1,1,0,1].*k(27);
+    Apafs=[1,1,1,1,0].*Apaf;
+    figure(fignum),clf,
+    for i=1:length(pC9s),
+    
+        x0=IC;
+        k(25)=k25s(i);
+        k(27)=k27s(i);
+        x0(49)=Apafs(i);
+        x0(52)=pC9s(i);
+        [t x]=ode15s(@rhs,tt,x0,options,k,k_,kc,v);
+        CP(:,i)=( x(1,21) -x(:,21) )./x(1,21);
+        dCPWT=( x(tn(:),21) -x(tn(:)+1,21) )./(dt.*x(1,21));
+        [dCPMax,tdN]=max(dCPWT);
+        Ts(i)=1./dCPMax./60;
+        Td(i)=tt(tdN)./60;
+        f1(i)=CP(end,i);
+        
+        subplot(length(pC9s),1,i),hold on
+        plot(tt(:)./3600,CP(:,i),'r-')
+        
+        % repeat with high levels of Smac
+        x0=IC;
+        k(25)=k25s(i);
+        k(27)=k27s(i);
+        x0(49)=Apafs(i);
+        x0(52)=pC9s(i);
+        x0(45)=HighSmac;
+        [t x]=ode15s(@rhs,tt,x0,options,k,k_,kc,v);
+        CP(:,i)=( x(1,21) -x(:,21) )./x(1,21);
+        dCPWT=( x(tn(:),21) -x(tn(:)+1,21) )./(dt.*x(1,21));
+        [dCPMax,tdN]=max(dCPWT);
+        Ts2(i)=1./dCPMax./60;
+        Td2(i)=tt(tdN)./60;
+        f2(i)=CP(end,i);
+        
+        subplot(length(pC9s),1,i),hold on
+        plot(tt(:)./3600,CP(:,i),'k-')
+        
+        ylabel('f'),
+        title([StrTitle(i,:),sprintf('\nT_s=%2.2f, T_s(hs)=%2.2f, f=%2.2f, f(hs)=%2.2f',Ts(i),Ts2(i),f1(i),f2(i))]),
+        axis([0,tf/3600,-0.05,1.05]),
+        if i==1,
+            legend('baselineSmac','high Smac',...
+                'location','East'),
+        end,
+        
+    end,
+        
+    xlabel('time (hr)'),
+    
+    k(25)=k25temp;
+    k(27)=k27temp;
+    
+    save FigS7_Data CP CC3 CC3Free Ts Td pC9s k25s k27s Apafs
+    
+    clear Ts Td pC9s k25s k27s Apafs dCPMax tdN dCPWT StrTitle tn CP CC3 CC3Free k25temp k27temp tt x x0 options samp_freq dt
+    
+    fignum=fignum+1;
+
+end, % Fig_9ABCEF
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+if Fig_9D,  % 
+    
+    SmacKD=.1;
+    pC9KD=.1;
+    
+    Smacs=floor(logspace(3,7,30));
+    pC9s=floor(logspace(3,7,30));
+    
+    tf=24*3600;
+    samp_freq=tf/60; 
+    dt=(tf-0)/samp_freq;
+    tt=0:dt:tf;
+    options=odeset('AbsTol',1E-10,'RelTol',1E-8,'maxstep',dt);
+    
+    count=1;
+    lineN=1;
+    
+    for i=1:length(Smacs),
+        for j=1:length(pC9s),
+            
+            x0=IC;
+            x0(45)=Smacs(i);
+            x0(49)=pC9s(j); % set both C9 and Apaf-1 to the same value
+            x0(52)=pC9s(j);
+            [t x]=ode15s(@rhs,tt,x0,options,k,k_,kc,v);
+            
+            CPs(j,i)=(x(1,21)-x(end,21))./x(1,21);
+            
+            CP_data(count)  =CPs(j,i);
+            Smac_data(count)=Smacs(i);
+            pC9_data(count)=pC9s(j);
+            
+            count=count+1;
+            
+        end,
+    end,
+        
+    x0=IC;
+    [t x]=ode15s(@rhs,tt,x0,options,k,k_,kc,v); 
+    pt1_WT=[Smac,pC9,(x(1,21)-x(end,21))./x(1,21)];
+    
+    x0=IC;
+    x0(45)=SmacKD*Smac;
+    [t x]=ode15s(@rhs,tt,x0,options,k,k_,kc,v);
+    pt2_SmacKD=[SmacKD*Smac,pC9,(x(1,21)-x(end,21))./x(1,21)];
+    
+    x0=IC;
+    x0(49)=pC9KD*pC9; % Apaf
+    x0(52)=SmacKD*pC9;
+    [t x]=ode15s(@rhs,tt,x0,options,k,k_,kc,v); 
+    pt3_pC9ApafKD=[Smac,pC9KD*pC9,(x(1,21)-x(end,21))./x(1,21)];
+    
+    figure(fignum),clf,hold on,
+    surf(Smacs,pC9s,CPs),
+    
+    plot3(pt1_WT(1),pt1_WT(2),pt1_WT(3),'b*',...
+        pt2_SmacKD(1),pt2_SmacKD(2),pt2_SmacKD(3),'r*',...
+        pt3_pC9ApafKD(1),pt3_pC9ApafKD(2),pt3_pC9ApafKD(3),'k*',...
+        pt1_WT(1),pt1_WT(2),pt1_WT(3),'bo',...
+        pt2_SmacKD(1),pt2_SmacKD(2),pt2_SmacKD(3),'ro',...
+        pt3_pC9ApafKD(1),pt3_pC9ApafKD(2),pt3_pC9ApafKD(3),'ko'),
+    
+    ApopLineN=1;
+    for i=1:length(Smacs),
+        if XIAP>=Smacs(i),
+            ApopLine(ApopLineN,:)=[Smacs(i),XIAP-Smacs(i),1.01];
+            ApopLineN=ApopLineN+1;
+        end,
+    end,
+    SmacLineN=1;
+    for i=1:length(pC9s),
+        if XIAP>=pC9s(i),
+            SmacLine(SmacLineN,:)=[XIAP-pC9s(i),pC9s(i),1.01];
+            SmacLineN=SmacLineN+1;
+        end,
+    end,
+        
+    plot3(ApopLine(:,1),ApopLine(:,2),ApopLine(:,3),'c-'),
+    plot3(SmacLine(:,1),SmacLine(:,2),SmacLine(:,3),'c-'),
+    axis([min(Smacs),max(Smacs),min(pC9s),max(pC9s),0,1]),
+    xlabel('[Smac]_0'),
+    ylabel('[pC9]_0 = [Apaf]_0'),
+    zlabel('CP - f'),
+    title(sprintf('Fig 4D: Tf = %2.2f hours, %2.2f %c Smac KD, %2.2f %c pC9/Apapf KD',tf/3600,100*(1-SmacKD),'%',100*(1-pC9KD),'%')),
+    set(gca,'XScale','log'),
+    set(gca,'YScale','log'),
+    view(3),hold off,rotate3d on,
+        
+    save Fig9D_Data  ApopLine SmacLine pt3_pC9ApafKD pt2_SmacKD pt1_WT CP_data Smac_data pC9_data 
+    
+    clear lineN SmacLine SmacLineN ApopLineN ApopLine XIAPLine LineN pt3_pC9ApafKD pt2_SmacKD pt1_WT CP_SmacKD pC9KD Smacs pC9s CPs CP_data Smac_data pC9_data CPWT SmacKD XIAPKD CP_pC9KD tt x x0 options samp_freq dt 
+    
+    fignum=fignum+1;
+       
+end, % Fig_9D
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+if Fig_10A, % 
+
+    L_freq=40;
+    Ls=floor(logspace(1,5,L_freq));
+    pC6s=[0,.01,.1,1,10,100].*pC6;
+    
+    tf=10*3600;
+    samp_freq=tf/30;
+    dt=(tf-0)/samp_freq;
+    tt=0:dt:tf;
+    options=odeset('AbsTol',1E-10,'RelTol',1E-8,'maxstep',dt);
+    
+    tn=1:1:length(tt)-1;
+    
+    for i=1:length(Ls),
+        for j=1:length(pC6s),
+        
+            x0=IC;
+            x0(1)=Ls(i);
+            x0(15)=pC6s(j); %set pC6
+            [t x]=ode15s(@rhs,tt,x0,options,k,k_,kc,v);
+            dCP=( x(tn(:),21) -x(tn(:)+1,21) )./(dt.*x(1,21));
+            [temp,tdN]=max(dCP);
+            Td(i,j)=tt(tdN)./60;
+            
+        end,
+    end, 
+    
+    figure(fignum),clf,
+    plot(Ls./Lfactor,Td),
+    xlabel('[L]_0'),
+    ylabel('T_d (min)'),
+    title(sprintf('Fig 6C: Tf = %2.2f hrs, L num freq=%2.2f (siRNA)',tf/3600,L_freq)),
+    legend('0','0.01\times [pC6]_0','0.1\times [pC6]_0','WT','10\times [pC6]_0','100\times [pC6]_0','1000\times [pC6]_0'),
+    set(gca,'XScale','log'),
+    
+    save Fig6C_Data Td Ls
+    
+    clear L_freq Td Ls temp tdN tn dCP Td_WT tt x x0 options samp_freq dt
+    
+    fignum=fignum+1;
+    
+
+
+end, % Fig_10A
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+if Fig_10BCD, % 
+    
+    tf=9*3600;
+    samp_freq=tf/60;
+    dt=(tf-0)/samp_freq;
+    tt=0:dt:tf;
+    options=odeset('AbsTol',1E-10,'RelTol',1E-8,'maxstep',dt);
+    Ls=[5*L50, L50, 0.05*L50];
+    ExpandX=[3,4,7];
+    ExpandY2=[0.1,0.085, 0.035];
+    ExpandY1=[-0.005,-0.004,-0.0015];
+    for i=1:length(Ls)
+        in=1:1:58;
+        x0(in(:))=IC(in(:));
+        in=59:1:63;
+        x0(in(:))=0;
+        x0(1)=Ls(i); % 
+        [t x]=ode15s(@fluxrhs,tt,x0,options,k,k_,kc,v);
+
+        CC8Tot=(x(1,7)-x(:,7))./x(1,7);
+        CC8viaDISC=x(:,61)./x(1,7);
+        CC8viaCC6=x(:,62)./x(1,7);
+        CP=(x(1,21)-x(:,21))./x(1,21);
+        MOMP=(x(1,45)-x(:,45))./x(1,45);
+        
+        xp(59)=kc(5)*x(13) ; % C8:pC3 sum
+
+
+        figure(fignum),clf,
+        subplot(2,1,1),hold on,
+        plot(tt./3600,CC8Tot,'m',...
+            tt./3600,CC8viaDISC,'r',... 
+            tt./3600,CC8viaCC6,'b',...
+            tt./3600,CP,'k',...
+            tt./3600,MOMP,'g'),
+        legend('CC8Tot','CC8 via DISC','CC8 via CC6','CP','MOMP'),
+        xlabel('time (hrs)'),
+        ylabel('f'),
+        title(sprintf('Fig 6B: %2.2f ng/ml TRAIL',Ls(i)/Lfactor)),
+        line([0,(2/3)*tf/3600],[0.105,0.105]),
+        line([(2/3)*tf/3600,(2/3)*tf/3600],[-.05,.105]),
+        axis([0 tf/3600 -.05 1.05]),
+        hold off,
+        subplot(2,1,2),hold on,
+        plot(tt./3600,CC8Tot,'m',...
+            tt./3600,CC8viaDISC,'r',... 
+            tt./3600,CC8viaCC6,'b',...
+            tt./3600,CP,'k',...
+            tt./3600,MOMP,'g'),
+        xlabel('time (hrs)'),
+        ylabel('f'),
+        axis([0,ExpandX(i),ExpandY1(i),ExpandY2(i)]),
+        hold off,
+        save Fig6B_Data CC8Tot CC8viaDISC CC8viaCC6 CP
+        clear in CC8Tot CC8viaDISC CC8viaCC6 CP x x0 
+        fignum=fignum+1;
+    end
+    
+    clear in CC8Tot CC8viaDISC CC8viaCC6 CP tt x x0 options samp_freq dt
+    
+
+end, % Fig_10BCD
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+function xp=rhs(t,x,k,k_,kc,v)
+% ODE with dimensions 
+xp=double(x);
+
+xp(1) = -k(1)*x(1)*x(2) +k_(1)*x(3) ; % Ligand 
+
+xp(2) = -k(1)*x(1)*x(2) +k_(1)*x(3) ; % R
+
+xp(3) =  k(1)*x(1)*x(2) -k_(1)*x(3) -kc(1)*x(3) ; % L:R complex
+
+xp(4) = kc(1)*x(3) +...
+    -k(2)*x(4)*x(5) +k_(2)*x(6) +...
+    -k(3)*x(4)*x(7) +k_(3)*x(8) +kc(3)*x(8); % R*
+
+xp(5)= -k(2)*x(4)*x(5) +k_(2)*x(6) ; % flip
+
+xp(6)=  k(2)*x(4)*x(5) -k_(2)*x(6) ; % flip:R*
+
+xp(7) = -k(3)*x(4)*x(7) +k_(3)*x(8) +...
+    -k(7)*x(7)*x(17) +k_(7)*x(18) ; % pC8 
+
+xp(8) =  k(3)*x(4)*x(7) -k_(3)*x(8) -kc(3)*x(8) ; % R*:pC8
+
+xp(9) =  kc(3)*x(8) +...
+    -k(4)*x(9)*x(10) +k_(4)*x(11) +...
+    -k(5)*x(9)*x(12) +k_(5)*x(13) +kc(5)*x(13) +...
+    +kc(7)*x(18) +...
+    -k(10)*x(9)*x(24) +k_(10)*x(25) +kc(10)*x(25) ; % C8
+
+xp(10) = -k(4)*x(9)*x(10) +k_(4)*x(11) ; % Bar
+
+xp(11) =  k(4)*x(9)*x(10) -k_(4)*x(11) ; % Bar:C8
+
+xp(12)= -k(5)*x(9)*x(12) +k_(5)*x(13) +...
+    -k(25)*x(12)*x(53) +k_(25)*x(54) ; % pC3
+
+xp(13)=  k(5)*x(9)*x(12) -k_(5)*x(13) -kc(5)*x(13) ; % C8:pC3
+
+xp(14)=  kc(5)*x(13) +...
+    -k(6)*x(14)*x(15) +k_(6)*x(16) +kc(6)*x(16) +...
+    -k(8)*x(14)*x(19) +k_(8)*x(20) +...
+    -k(9)*x(14)*x(21) +k_(9)*x(22) +kc(9)*x(22) +...
+    +kc(25)*x(54) ; % C3 
+
+xp(15)= -k(6)*x(14)*x(15) +k_(6)*x(16) ; % pC6
+
+xp(16)=  k(6)*x(14)*x(15) -k_(6)*x(16) -kc(6)*x(16) ; % C3:pC6
+
+xp(17)=  kc(6)*x(16) +...
+    -k(7)*x(7)*x(17) +k_(7)*x(18) +kc(7)*x(18) ; % C6
+
+xp(18)=  k(7)*x(7)*x(17) -k_(7)*x(18) -kc(7)*x(18) ; % C6:pC8
+
+xp(19)= -k(8)*x(14)*x(19) +k_(8)*x(20) +kc(8)*x(20) +... 
+    -k(27)*x(19)*x(53) +k_(27)*x(56) +...
+    -k(28)*x(19)*x(55) +k_(28)*x(57) ; % XIAP
+
+xp(20)=  k(8)*x(14)*x(19) -k_(8)*x(20) -kc(8)*x(20) ; % XIAP:C3
+
+xp(21)= -k(9)*x(14)*x(21) +k_(9)*x(22) ; % PARP
+
+xp(22)=  k(9)*x(14)*x(21) -k_(9)*x(22) -kc(9)*x(22) ; % C3:PARP
+
+xp(23)= kc(9)*x(22) ; % CPARP
+
+xp(24)= -k(10)*x(9)*x(24) +k_(10)*x(25) ; % Bid
+
+xp(25)=  k(10)*x(9)*x(24) -k_(10)*x(25) -kc(10)*x(25) ; % C8:Bid
+
+xp(26)=  kc(10)*x(25) +...
+    -k(11)*x(26)*x(27) +k_(11)*x(28) +...
+    -k(12)*x(26)*x(29) +k_(12)*x(30) + kc(12)*x(30); % tBid
+
+xp(27)= -k(11)*x(26)*x(27) +k_(11)*x(28) ; % Bcl2c
+
+xp(28)= +k(11)*x(26)*x(27) -k_(11)*x(28) ; % Bcl2c:tBid
+
+xp(29)= -k(12)*x(26)*x(29) +k_(12)*x(30) ; % Bax
+
+xp(30)=  k(12)*x(26)*x(29) -k_(12)*x(30) - kc(12)*x(30) ; % tBid:Bax
+
+xp(31)=  kc(12)*x(30) +...
+    -k(13)*x(31) + k_(13)*x(32) ; % Bax*
+
+xp(32)=  k(13)*x(31) - k_(13)*x(32) +...
+    -1/v*k(14)*x(32)*x(33) +k_(14)*x(34) +...
+    -1/v*2*k(15)*x(32)^2 +2*k_(15)*x(35) ; % Baxm
+
+xp(33)= -1/v*k(14)*x(32)*x(33) +k_(14)*x(34) +...
+    -1/v*k(16)*x(33)*x(35) +k_(16)*x(36) +...
+    -1/v*k(18)*x(33)*x(37) +k_(18)*x(38) ; % Bcl2 
+
+xp(34)=  1/v*k(14)*x(32)*x(33) -k_(14)*x(34) ; % Baxm:Bcl2
+
+xp(35)=  1/v*k(15)*x(32)^2 -k_(15)*x(35) +...
+    -1/v*k(16)*x(33)*x(35) +k_(16)*x(36) +...
+    -2/v*k(17)*x(35)^2 +2*k_(17)*x(37) ; % Bax2
+
+xp(36)=  1/v*k(16)*x(33)*x(35) -k_(16)*x(36) ; % Bax2:Bcl2
+
+xp(37)= 1/v*k(17)*x(35)^2 -k_(17)*x(37)+... 
+    -1/v*k(18)*x(33)*x(37) +k_(18)*x(38) +...
+    -1/v*k(19)*x(39)*x(37) +k_(19)*x(40) ; % Bax4 
+
+xp(38)= 1/v*k(18)*x(33)*x(37) -k_(18)*x(38) ; % Bax4:Bcl2
+
+xp(39)= -1/v*k(19)*x(39)*x(37) +k_(19)*x(40); % M
+
+xp(40)=  1/v*k(19)*x(39)*x(37) -k_(19)*x(40) -kc(19)*x(40) ; % Bax4:M
+
+xp(41)=  kc(19)*x(40) +...
+    -1/v*k(20)*x(41)*x(42) +k_(20)*x(43) +kc(20)*x(43) +...
+    -1/v*k(21)*x(41)*x(45) +k_(21)*x(46) +kc(21)*x(46) ; % M*
+
+xp(42)= -1/v*k(20)*x(41)*x(42) +k_(20)*x(43) ; % CytoCm
+
+xp(43)=  1/v*k(20)*x(41)*x(42) -k_(20)*x(43) -kc(20)*x(43) ; % M*:CytoCm
+
+xp(44)=  kc(20)*x(43) +...
+    -k(22)*x(44) +k_(22)*x(48) ; % CytoCr
+
+xp(45)= -1/v*k(21)*x(41)*x(45) +k_(21)*x(46) ; % Smacm
+
+xp(46)=  1/v*k(21)*x(41)*x(45) -k_(21)*x(46) -kc(21)*x(46) ; % M*:Smacm
+
+xp(47)=  kc(21)*x(46) +...
+    -k(26)*x(47) +k_(26)*x(55) ; % Smacr
+
+xp(48)=  k(22)*x(44) -k_(22)*x(48) +...
+    -k(23)*x(48)*x(49) +k_(23)*x(50) +kc(23)*x(50) ; % CytoC
+
+xp(49)= -k(23)*x(48)*x(49) +k_(23)*x(50) ; % Apaf
+
+xp(50)=  k(23)*x(48)*x(49) -k_(23)*x(50) -kc(23)*x(50) ; % Apaf:CytoC
+
+xp(51)= kc(23)*x(50) +...
+    -k(24)*x(51)*x(52) +k_(24)*x(53); % Apaf*
+
+xp(52)= -k(24)*x(51)*x(52) +k_(24)*x(53) ; % pC9
+
+xp(53)=  k(24)*x(51)*x(52) -k_(24)*x(53) +...
+    -k(25)*x(12)*x(53) +k_(25)*x(54) +kc(25)*x(54) +...
+    -k(27)*x(19)*x(53) +k_(27)*x(56) ; % Apop
+
+xp(54)=  k(25)*x(12)*x(53) -k_(25)*x(54) -kc(25)*x(54) ; % Apop:pC3
+
+xp(55)=  k(26)*x(47) -k_(26)*x(55) +...
+    -k(28)*x(19)*x(55) +k_(28)*x(57) ; % Smac
+
+xp(56)=  k(27)*x(19)*x(53) -k_(27)*x(56) ; % Apop:XIAP 
+
+xp(57)=  k(28)*x(19)*x(55) -k_(28)*x(57) ; % Smac:XIap
+
+xp(58)=kc(8)*x(20); % C3_Ub
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+function xp=fluxrhs(t,x,k,k_,kc,v)
+% ODE with dimensions 
+xp=double(x);
+
+xp(1) = -k(1)*x(1)*x(2) +k_(1)*x(3) ; % Ligand 
+
+xp(2) = -k(1)*x(1)*x(2) +k_(1)*x(3) ; % R
+
+xp(3) =  k(1)*x(1)*x(2) -k_(1)*x(3) -kc(1)*x(3) ; % L:R complex
+
+xp(4) = kc(1)*x(3) +...
+    -k(2)*x(4)*x(5) +k_(2)*x(6) +...
+    -k(3)*x(4)*x(7) +k_(3)*x(8) +kc(3)*x(8); % R*
+
+xp(5)= -k(2)*x(4)*x(5) +k_(2)*x(6) ; % flip
+
+xp(6)=  k(2)*x(4)*x(5) -k_(2)*x(6) ; % flip:R*
+
+xp(7) = -k(3)*x(4)*x(7) +k_(3)*x(8) +...
+    -k(7)*x(7)*x(17) +k_(7)*x(18) ; % pC8 
+
+xp(8) =  k(3)*x(4)*x(7) -k_(3)*x(8) -kc(3)*x(8) ; % R*:pC8
+
+xp(9) =  kc(3)*x(8) +...
+    -k(4)*x(9)*x(10) +k_(4)*x(11) +...
+    -k(5)*x(9)*x(12) +k_(5)*x(13) +kc(5)*x(13) +...
+    +kc(7)*x(18) +...
+    -k(10)*x(9)*x(24) +k_(10)*x(25) +kc(10)*x(25) ; % C8
+
+xp(10) = -k(4)*x(9)*x(10) +k_(4)*x(11) ; % Bar
+
+xp(11) =  k(4)*x(9)*x(10) -k_(4)*x(11) ; % Bar:C8
+
+xp(12)= -k(5)*x(9)*x(12) +k_(5)*x(13) +...
+    -k(25)*x(12)*x(53) +k_(25)*x(54) ; % pC3
+
+xp(13)=  k(5)*x(9)*x(12) -k_(5)*x(13) -kc(5)*x(13) ; % C8:pC3
+
+xp(14)=  kc(5)*x(13) +...
+    -k(6)*x(14)*x(15) +k_(6)*x(16) +kc(6)*x(16) +...
+    -k(8)*x(14)*x(19) +k_(8)*x(20) +...
+    -k(9)*x(14)*x(21) +k_(9)*x(22) +kc(9)*x(22) +...
+    +kc(25)*x(54) ; % C3 
+
+xp(15)= -k(6)*x(14)*x(15) +k_(6)*x(16) ; % pC6
+
+xp(16)=  k(6)*x(14)*x(15) -k_(6)*x(16) -kc(6)*x(16) ; % C3:pC6
+
+xp(17)=  kc(6)*x(16) +...
+    -k(7)*x(7)*x(17) +k_(7)*x(18) +kc(7)*x(18) ; % C6
+
+xp(18)=  k(7)*x(7)*x(17) -k_(7)*x(18) -kc(7)*x(18) ; % C6:pC8
+
+xp(19)= -k(8)*x(14)*x(19) +k_(8)*x(20) +kc(8)*x(20) +... 
+    -k(27)*x(19)*x(53) +k_(27)*x(56) +...
+    -k(28)*x(19)*x(55) +k_(28)*x(57) ; % XIAP
+
+xp(20)=  k(8)*x(14)*x(19) -k_(8)*x(20) -kc(8)*x(20) ; % XIAP:C3
+
+xp(21)= -k(9)*x(14)*x(21) +k_(9)*x(22) ; % PARP
+
+xp(22)=  k(9)*x(14)*x(21) -k_(9)*x(22) -kc(9)*x(22) ; % C3:PARP
+
+xp(23)= kc(9)*x(22) ; % CPARP
+
+xp(24)= -k(10)*x(9)*x(24) +k_(10)*x(25) ; % Bid
+
+xp(25)=  k(10)*x(9)*x(24) -k_(10)*x(25) -kc(10)*x(25) ; % C8:Bid
+
+xp(26)=  kc(10)*x(25) +...
+    -k(11)*x(26)*x(27) +k_(11)*x(28) +...
+    -k(12)*x(26)*x(29) +k_(12)*x(30) + kc(12)*x(30); % tBid
+
+xp(27)= -k(11)*x(26)*x(27) +k_(11)*x(28) ; % Bcl2c
+
+xp(28)= +k(11)*x(26)*x(27) -k_(11)*x(28) ; % Bcl2c:tBid
+
+xp(29)= -k(12)*x(26)*x(29) +k_(12)*x(30) ; % Bax
+
+xp(30)=  k(12)*x(26)*x(29) -k_(12)*x(30) - kc(12)*x(30) ; % tBid:Bax
+
+xp(31)=  kc(12)*x(30) +...
+    -k(13)*x(31) + k_(13)*x(32) ; % Bax*
+
+xp(32)=  k(13)*x(31) - k_(13)*x(32) +...
+    -1/v*k(14)*x(32)*x(33) +k_(14)*x(34) +...
+    -1/v*2*k(15)*x(32)^2 +2*k_(15)*x(35) ; % Baxm
+
+xp(33)= -1/v*k(14)*x(32)*x(33) +k_(14)*x(34) +...
+    -1/v*k(16)*x(33)*x(35) +k_(16)*x(36) +...
+    -1/v*k(18)*x(33)*x(37) +k_(18)*x(38) ; % Bcl2 
+
+xp(34)=  1/v*k(14)*x(32)*x(33) -k_(14)*x(34) ; % Baxm:Bcl2
+
+xp(35)=  1/v*k(15)*x(32)^2 -k_(15)*x(35) +...
+    -1/v*k(16)*x(33)*x(35) +k_(16)*x(36) +...
+    -2/v*k(17)*x(35)^2 +2*k_(17)*x(37) ; % Bax2
+
+xp(36)=  1/v*k(16)*x(33)*x(35) -k_(16)*x(36) ; % Bax2:Bcl2
+
+xp(37)= 1/v*k(17)*x(35)^2 -k_(17)*x(37)+... 
+    -1/v*k(18)*x(33)*x(37) +k_(18)*x(38) +...
+    -1/v*k(19)*x(39)*x(37) +k_(19)*x(40) ; % Bax4 
+
+xp(38)= 1/v*k(18)*x(33)*x(37) -k_(18)*x(38) ; % Bax4:Bcl2
+
+xp(39)= -1/v*k(19)*x(39)*x(37) +k_(19)*x(40); % M
+
+xp(40)=  1/v*k(19)*x(39)*x(37) -k_(19)*x(40) -kc(19)*x(40) ; % Bax4:M
+
+xp(41)=  kc(19)*x(40) +...
+    -1/v*k(20)*x(41)*x(42) +k_(20)*x(43) +kc(20)*x(43) +...
+    -1/v*k(21)*x(41)*x(45) +k_(21)*x(46) +kc(21)*x(46) ; % M*
+
+xp(42)= -1/v*k(20)*x(41)*x(42) +k_(20)*x(43) ; % CytoCm
+
+xp(43)=  1/v*k(20)*x(41)*x(42) -k_(20)*x(43) -kc(20)*x(43) ; % M*:CytoCm
+
+xp(44)=  kc(20)*x(43) +...
+    -k(22)*x(44) +k_(22)*x(48) ; % CytoCr
+
+xp(45)= -1/v*k(21)*x(41)*x(45) +k_(21)*x(46) ; % Smacm
+
+xp(46)=  1/v*k(21)*x(41)*x(45) -k_(21)*x(46) -kc(21)*x(46) ; % M*:Smacm
+
+xp(47)=  kc(21)*x(46) +...
+    -k(26)*x(47) +k_(26)*x(55) ; % Smacr
+
+xp(48)=  k(22)*x(44) -k_(22)*x(48) +...
+    -k(23)*x(48)*x(49) +k_(23)*x(50) +kc(23)*x(50) ; % CytoC
+
+xp(49)= -k(23)*x(48)*x(49) +k_(23)*x(50) ; % Apaf
+
+xp(50)=  k(23)*x(48)*x(49) -k_(23)*x(50) -kc(23)*x(50) ; % Apaf:CytoC
+
+xp(51)= kc(23)*x(50) +...
+    -k(24)*x(51)*x(52) +k_(24)*x(53); % Apaf*
+
+xp(52)= -k(24)*x(51)*x(52) +k_(24)*x(53) ; % pC9
+
+xp(53)=  k(24)*x(51)*x(52) -k_(24)*x(53) +...
+    -k(25)*x(12)*x(53) +k_(25)*x(54) +kc(25)*x(54) +...
+    -k(27)*x(19)*x(53) +k_(27)*x(56) ; % Apop
+
+xp(54)=  k(25)*x(12)*x(53) -k_(25)*x(54) -kc(25)*x(54) ; % Apop:pC3
+
+xp(55)=  k(26)*x(47) -k_(26)*x(55) +...
+    -k(28)*x(19)*x(55) +k_(28)*x(57) ; % Smac
+
+xp(56)=  k(27)*x(19)*x(53) -k_(27)*x(56) ; % Apop:XIAP 
+
+xp(57)=  k(28)*x(19)*x(55) -k_(28)*x(57) ; % Smac:XIap
+
+xp(58)=kc(8)*x(20); % C3_Ub
+
+xp(59)=kc(5)*x(13) ; % C8:pC3 sum
+
+xp(60)=kc(25)*x(54) ; % Apop:pC3 sum
+
+xp(61)=kc(3)*x(8) ; % R*:pC8 sum
+
+xp(62)=kc(7)*x(18) ; % C6:pC8 sum
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

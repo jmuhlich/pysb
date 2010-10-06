@@ -7,10 +7,14 @@ import re
 
 def odesolve(model, t):
     pysb.bng.generate_equations(model)
-# FIXME code outside of model shouldn't have to handle parameter_overrides (same for initial_conditions below)
+    # FIXME code outside of model shouldn't have to handle parameter_overrides (same for initial_conditions below)
+    # WTF? WHAT DOES THIS LINE DO????
     param_subs = dict([ (sympy.Symbol(p.name), p.value) for p in model.parameters + model.parameter_overrides.values() ])
-
+    
+    # Get the constants from the model
     c_code_consts = '\n'.join(['float %s = %e;' % (p.name, p.value) for p in model.parameters])
+
+
     c_code_eqs = '\n'.join(['ydot[%d] = %s;' % (i, sympy.ccode(model.odes[i])) for i in range(len(model.odes))])
     c_code_eqs = re.sub(r's(\d+)', lambda m: 'y[%s]' % (int(m.group(1))), c_code_eqs)
     c_code = c_code_consts + '\n\n' + c_code_eqs
@@ -22,7 +26,7 @@ def odesolve(model, t):
             ic_param = override
         si = model.get_species_index(cp)
         y0[si] = ic_param.value
-
+        
     def rhs(y, t):
         ydot = y.copy()  # seems to be the fastest way to get an array of the same size?
         inline(c_code, ['y', 'ydot']); # sets ydot as a side effect

@@ -1,4 +1,4 @@
-from pysb.integrate import odesolve
+from pysb.integrate_lsoda import odesolve
 from pylab import *
 
 from earm_1_0 import model

@@ -1,5 +1,5 @@
 from pylab import *
-from pysb.integrate import odesolve
+from pysb.integrate_lsoda import odesolve
 
 from bax_tetramer import model
 

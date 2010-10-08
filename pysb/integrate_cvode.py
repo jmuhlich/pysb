@@ -31,7 +31,8 @@ def odesolve(model, t):
     # define function to integrate and assign RHS from BNG
     def f(t, y, ydot, f_data):
         for i in 
-    
+        exec "%s = %f" % (model.parameters[0].name, model.parameters[0].value)
+
 
 
     # Get the constants from the model

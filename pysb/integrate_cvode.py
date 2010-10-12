@@ -14,9 +14,9 @@ def odesolve(model, t):
     
     #make a function that can be passed to cvode
     #init the arrays we need
-    y = numpy.zeros(len(model.odes))
-    ydot = y.copy() 
-    y0 = y.copy()
+    y = numpy.zeros(len(model.odes)) #changing values for integration y[0]...y[n]
+    ydot = y.copy() # dy/dt
+    y0 = y.copy() # initial values for y (bound)
     
     # assign the initial conditions
     # FIXME code outside of model shouldn't have to handle parameter_overrides (same for initial_conditions below)
@@ -29,15 +29,22 @@ def odesolve(model, t):
         y0[speci] = ic_parm.value
     
     # define function to integrate and assign RHS from BNG
-    def f(t, y, ydot, f_data):
-        for i in 
-        exec "%s = %f" % (model.parameters[0].name, model.parameters[0].value)
+    def getydots(m):
+        keyvals = {}
+        # first get a key:value parameters dict
+        for i in range(0, len(model.parameters)):
+            key = model.parameters[i].name
+            if "_0" in key:
+                continue
+            else:
+                exec "%s = %f" % (model.parameters[i].name, model.parameters[i].value)
 
+        # assign the ydots. notice the constants are in this namespace.
+        for i in range(0,len(model.odes)):
+            ydot[i] = re.sub(r's(\d+)', lambda m: 'y[%s]' % (int(m.group(1))), model.odes[i]
 
 
     # Get the constants from the model
-    c_code_consts = '\n'.join(['float %s = %e;' % (p.name, p.value) for p in model.parameters])
-
 
     c_code_eqs = '\n\t'.join(['ydot[%d] = %s;' % (i, sympy.ccode(model.odes[i])) for i in range(len(model.odes))])
     c_code_eqs = re.sub(r's(\d+)', lambda m: 'y[%s]' % (int(m.group(1))), c_code_eqs)

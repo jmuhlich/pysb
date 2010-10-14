@@ -5,7 +5,8 @@ import sympy
 import re
 
 
-def odesolve(model, t):
+
+def odeinit(model):
     # Generate the ODES (Jah sucks at comments)
     pysb.bng.generate_equations(model)
 
@@ -19,7 +20,7 @@ def odesolve(model, t):
     y0 = y.copy() # initial values for y (bound)
     
     # assign the initial conditions
-    # FIXME code outside of model shouldn't have to handle parameter_overrides (same for initial_conditions below)
+    # FIXME code outside of model shouldn't handle parameter_overrides 
     # CFL: Species really should be a class with methods such as .name, .index, etc
     for cplxptrn, ic_parm in model.initial_conditions:
         override = model.parameter_overrides.get(ic_parm.name)
@@ -28,20 +29,29 @@ def odesolve(model, t):
         speci = model.get_species_index(cplxptrn)
         y0[speci] = ic_parm.value
     
-    # define function to integrate and assign RHS from BNG
-    def getydots(m):
-        keyvals = {}
-        # first get a key:value parameters dict
-        for i in range(0, len(model.parameters)):
-            key = model.parameters[i].name
-            if "_0" in key:
-                continue
-            else:
-                exec "%s = %f" % (model.parameters[i].name, model.parameters[i].value)
+    # get parameters from BNG
+    keyvals = {}
+    # first get a key:value parameters dict
+    for i in range(0, len(model.parameters)):
+        key = model.parameters[i].name
+        if "_0" in key:
+            continue
+        else:
+            exec "%s = %f" % (model.parameters[i].name, model.parameters[i].value)
 
-        # assign the ydots. notice the constants are in this namespace.
+    # make a set of ydot functions. notice the functions are in this namespace.
+    for i in range(0,len(model.odes)):
+        exec "def _ydot%s(y): return %s" % (i, str(re.sub(r's(\d+)', lambda m: 'y[%s]' % (int(m.group(1))), model.odes[i])))
+
+    #use the _ydots to build the function for analysis
+    #FIXME: this is probably going to be RIDICULOUSLY slow to do an eval on each integration step... 
+    #I can't think of a better way to do this unless we do this into a class and somehow
+    #declare the functions at a lower namespace... OR declare functions right from time we read the BNG code...
+    def f(t, y, ydot, f_data):
         for i in range(0,len(model.odes)):
-            ydot[i] = re.sub(r's(\d+)', lambda m: 'y[%s]' % (int(m.group(1))), model.odes[i]
+            ydot[i] = eval("_ydot%d(y)"%(i))
+        return 0
+    
 
 
     # Get the constants from the model

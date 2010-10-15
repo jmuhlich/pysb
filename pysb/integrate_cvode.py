@@ -1,27 +1,21 @@
 import pysb.bng
-import numpy
+import numpy, sympy, re
 from pysundials import cvode
-import sympy
-import re
 
-
-
-def odeinit(model):
+def odesolve(model, output):
     # Generate the ODES (Jah sucks at comments)
     pysb.bng.generate_equations(model)
 
     # Get the size of the ODE array
     odesize = len(model.odes)
     
-    #make a function that can be passed to cvode
-    #init the arrays we need
-    y = numpy.zeros(len(model.odes)) #changing values for integration y[0]...y[n]
-    ydot = y.copy() # dy/dt
+    # init the arrays we need
+    ydot = numpy.zeros(odesize) #dy/dt
     y0 = y.copy() # initial values for y (bound)
-    
+
     # assign the initial conditions
-    # FIXME code outside of model shouldn't handle parameter_overrides 
-    # CFL: Species really should be a class with methods such as .name, .index, etc
+    # FIXME: code outside of model shouldn't handle parameter_overrides 
+    # FIXME: Species really should be a class with methods such as .name, .index, etc... jah is good at this
     for cplxptrn, ic_parm in model.initial_conditions:
         override = model.parameter_overrides.get(ic_parm.name)
         if override is not None:
@@ -30,8 +24,7 @@ def odeinit(model):
         y0[speci] = ic_parm.value
     
     # get parameters from BNG
-    keyvals = {}
-    # first get a key:value parameters dict
+    # get a key:value parameters dict. notice these are local values
     for i in range(0, len(model.parameters)):
         key = model.parameters[i].name
         if "_0" in key:
@@ -39,46 +32,53 @@ def odeinit(model):
         else:
             exec "%s = %f" % (model.parameters[i].name, model.parameters[i].value)
 
-    # make a set of ydot functions. notice the functions are in this namespace.
+    # make a dict of ydot functions. notice the functions are in this namespace.
+    funcs = {}
     for i in range(0,len(model.odes)):
-        exec "def _ydot%s(y): return %s" % (i, str(re.sub(r's(\d+)', lambda m: 'y[%s]' % (int(m.group(1))), model.odes[i])))
-
-    #use the _ydots to build the function for analysis
-    #FIXME: this is probably going to be RIDICULOUSLY slow to do an eval on each integration step... 
-    #I can't think of a better way to do this unless we do this into a class and somehow
-    #declare the functions at a lower namespace... OR declare functions right from time we read the BNG code...
+        exec "def _ydot%d(y): return %s" % (i, re.sub(r's(\d+)', lambda m: 'y[%s]'%(int(m.group(1))), str(model.odes[i])))
+        funcs[i] = eval("_ydot%d"%(i))
+    
+    # use the _ydots to build the function for analysis
+    # FIXME: the best way i could think of not doing an "exec" or an "eval" in each loop was to
+    #        map a dict to a function. although I love python I miss C pointers. Perhaps ctypes?
     def f(t, y, ydot, f_data):
         for i in range(0,len(model.odes)):
-            ydot[i] = eval("_ydot%d(y)"%(i))
+            ydot[i] = funcs[i](y)
         return 0
     
+    # initialize y
+    y = cvode.Nvector(y0)
 
+    # initialize the cvode memory object
+    cvode_mem = cvode.CVodeCreate(cvode.CV_BDF, cvode.CV_NEWTON)
+    
+    # allocate the cvode memory as needed
+    cvode.CVodeMalloc(cvode_mem, f, 0.0, y, cvode.CV_SS, 1.0e-8, 1.0e-12)
+    
+    # link integrator with linear solver
+    cvode.CVDense(cvode_mem, odesize)
+    
+    #list of outputs
+    output = []
+    for i in range(0, odesize+1): #leave one for the timestamp
+        output.append([])
 
-    # Get the constants from the model
-
-    c_code_eqs = '\n\t'.join(['ydot[%d] = %s;' % (i, sympy.ccode(model.odes[i])) for i in range(len(model.odes))])
-    c_code_eqs = re.sub(r's(\d+)', lambda m: 'y[%s]' % (int(m.group(1))), c_code_eqs)
-    c_code = c_code_consts + '\n\n' + c_code_eqs
-
-    y0 = numpy.zeros((len(model.odes),))
+    iout = 0 #initial time
+    tout = 0.1 #time of next integration
+    
+    print "Beginning integration"
+    while iout < 10000:
+        ret = cvode.CVode(cvode_mem, tout, y, ctypes.byref(t), cvode.CV_NORMAL)
         
-    def rhs(y, t):
-        ydot = y.copy()  # seems to be the fastest way to get an array of the same size?
-        inline(c_code, ['y', 'ydot']); # sets ydot as a side effect
-        return ydot
+        if ret !=0:
+            print "CVODE ERROR %i"%(ret)
+            break
+        output[0].append(tout)
+        for i in range(1, odesize):
+            output[i].append(y[i])
 
-    nspecies = len(model.species)
-    obs_names = [name for name, rp in model.observable_patterns]
-    rec_names = ['__s%d' % i for i in range(nspecies)] + obs_names
-    yout = numpy.ndarray((len(t), len(rec_names)))
+        # increase the while counter
+        iout += 1
+    print "Integration finished"
 
-    # perform the actual integration
-    yout[:, :nspecies] = odeint(rhs, y0, t)
-
-    for i, name in enumerate(obs_names):
-        factors, species = zip(*model.observable_groups[name])
-        yout[:, nspecies + i] = (yout[:, species] * factors).sum(1)
-
-    dtype = zip(rec_names, (yout.dtype,) * len(rec_names))
-    yrec = numpy.recarray((yout.shape[0],), dtype=dtype, buf=yout)
-    return yrec
+    return output

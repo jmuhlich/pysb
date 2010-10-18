@@ -1,8 +1,8 @@
 import pysb.bng
-import numpy, sympy, re
+import numpy, sympy, re, ctypes
 from pysundials import cvode
 
-def odesolve(model, output):
+def odesolve(model, tfinal):
     # Generate the ODES (Jah sucks at comments)
     pysb.bng.generate_equations(model)
 
@@ -11,7 +11,7 @@ def odesolve(model, output):
     
     # init the arrays we need
     ydot = numpy.zeros(odesize) #dy/dt
-    y0 = y.copy() # initial values for y (bound)
+    yzero = numpy.zeros(odesize)  #initial values for yzero
 
     # assign the initial conditions
     # FIXME: code outside of model shouldn't handle parameter_overrides 
@@ -21,7 +21,11 @@ def odesolve(model, output):
         if override is not None:
             ic_parm = override
         speci = model.get_species_index(cplxptrn)
-        y0[speci] = ic_parm.value
+        yzero[speci] = ic_parm.value
+
+    # initialize y with the yzero values
+    y = cvode.NVector(yzero)
+    print "initial values:", y
     
     # get parameters from BNG
     # get a key:value parameters dict. notice these are local values
@@ -30,14 +34,15 @@ def odesolve(model, output):
         if "_0" in key:
             continue
         else:
-            exec "%s = %f" % (model.parameters[i].name, model.parameters[i].value)
+            globals()[model.parameters[i].name] = model.parameters[i].value
 
     # make a dict of ydot functions. notice the functions are in this namespace.
     funcs = {}
-    for i in range(0,len(model.odes)):
-        exec "def _ydot%d(y): return %s" % (i, re.sub(r's(\d+)', lambda m: 'y[%s]'%(int(m.group(1))), str(model.odes[i])))
-        funcs[i] = eval("_ydot%d"%(i))
-    
+    for i in range(0,odesize):
+        tempstring = re.sub(r's(\d+)', lambda m: 'y[%s]'%(int(m.group(1))), str(model.odes[i]))
+        def tempfunc(y): return eval(tempstring)
+        funcs[i] = tempfunc
+
     # use the _ydots to build the function for analysis
     # FIXME: the best way i could think of not doing an "exec" or an "eval" in each loop was to
     #        map a dict to a function. although I love python I miss C pointers. Perhaps ctypes?
@@ -46,9 +51,6 @@ def odesolve(model, output):
             ydot[i] = funcs[i](y)
         return 0
     
-    # initialize y
-    y = cvode.Nvector(y0)
-
     # initialize the cvode memory object
     cvode_mem = cvode.CVodeCreate(cvode.CV_BDF, cvode.CV_NEWTON)
     
@@ -63,11 +65,12 @@ def odesolve(model, output):
     for i in range(0, odesize+1): #leave one for the timestamp
         output.append([])
 
+    t = cvode.realtype(0.0)
     iout = 0 #initial time
     tout = 0.1 #time of next integration
     
     print "Beginning integration"
-    while iout < 10000:
+    while iout < tfinal:
         ret = cvode.CVode(cvode_mem, tout, y, ctypes.byref(t), cvode.CV_NORMAL)
         
         if ret !=0:

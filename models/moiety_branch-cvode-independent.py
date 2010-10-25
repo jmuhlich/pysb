@@ -44,12 +44,12 @@ def f(t, y, ydot , f_data ):
     ydot [S1] = R1(y) - R3(y) - R4(y)
     return 0
 
-y = cvode . NVector ([1.0 , 0.7])
+y = cvode.NVector ([1.0 , 0.7])
 icsum = 0.7 + 0.3 # setting the initial sum of the conservation
 
 cvode_mem = cvode.CVodeCreate(cvode.CV_BDF, cvode.CV_NEWTON)
 cvode.CVodeMalloc(cvode_mem, f, 0.0, y, cvode.CV_SS, 1.0e-8, 1.0e-12)
-cvode.CVDense ( cvode_mem , 2)
+cvode.CVDense (cvode_mem , 2)
 
 results = ([] , [], [], [])
 

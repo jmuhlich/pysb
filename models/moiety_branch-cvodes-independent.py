@@ -3,12 +3,6 @@ from pysundials import nvecserial
 import ctypes
 from matplotlib import pyplot
 
-#V1 = 1.0
-#V2 = 10.0
-#V3 = 1.0
-#V4 = 1.0
-
-
 K1_X0 = 1.0
 K1_S2 = 1.0
 K2_S3 = 1.0
@@ -25,6 +19,7 @@ X7 = 1.0e-12
 S1 = 0
 S2 = 1
 
+#these are now indexes, not real values
 V1 = 0
 V2 = 1
 V3 = 2
@@ -56,8 +51,13 @@ def f(t, y, ydot, f_data):
     ydot [S2] = R2(y, data.p) - R1(y, data.p)
     ydot [S1] = R1(y, data.p) - R3(y, data.p) - R4(y, data.p)
     return 0
-
-data = UserData()
+# The previous assignment was:
+# V1 = 1.0
+# V2 = 10.0
+# V3 = 1.0
+# V4 = 1.0
+# Now they are added into the new data.p object
+data = UserData() #define an instance of UserData
 data.p[V1] = 1.0
 data.p[V2] = 10.0
 data.p[V3] = 1.0
@@ -68,7 +68,7 @@ icsum = 0.7 + 0.3 # setting the initial sum of the conservation
 
 cvodes_mem = cvodes.CVodeCreate(cvodes.CV_BDF, cvodes.CV_NEWTON)
 cvodes.CVodeMalloc(cvodes_mem, f, 0.0, y, cvodes.CV_SS, 1.0e-8, 1.0e-12)
-cvodes.CVodeSetFdata(cvodes_mem, ctypes.pointer(data))
+cvodes.CVodeSetFdata(cvodes_mem, ctypes.pointer(data)) #point to the sens data
 cvodes.CVDense (cvodes_mem, 2)
 
 yS = nvecserial.NVectorArray([([0]*2)]*4)

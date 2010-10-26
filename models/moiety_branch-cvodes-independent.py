@@ -67,10 +67,18 @@ y = cvodes.NVector([1.0 , 0.7])
 icsum = 0.7 + 0.3 # setting the initial sum of the conservation
 
 cvodes_mem = cvodes.CVodeCreate(cvodes.CV_BDF, cvodes.CV_NEWTON)
+#
+# Set CVodeMalloc(cvode_mem, f, 0.0, y, cvodes.CV_SV, reltol, abstol)
+# reltol and abstol can be values or vectors
+# if using a vector then cvodes.CV_SV shuold be used
+#
 cvodes.CVodeMalloc(cvodes_mem, f, 0.0, y, cvodes.CV_SS, 1.0e-8, 1.0e-12)
 cvodes.CVodeSetFdata(cvodes_mem, ctypes.pointer(data)) #point to the sens data
-cvodes.CVDense (cvodes_mem, 2)
-
+cvodes.CVDense (cvodes_mem, 2) #choice of linear solver, cvdense, cvband, etc
+ 
+#
+#create NvectorArray of size "# of variables" x "# of params for sensitivities"
+#
 yS = nvecserial.NVectorArray([([0]*2)]*4)
 
 cvodes.CVodeSensMalloc(cvodes_mem, 4, cvodes.CV_SIMULTANEOUS, yS)
@@ -108,7 +116,7 @@ results[3].append((icsum- y[S2]))
 results[4].append(yS[V2][S1])
 results[5].append(yS[V2][S2])
 
-iout = 1
+ciout = 1
 tout = 0.05
 while iout <= 80:
     ret = cvodes.CVode(cvodes_mem,

@@ -16,6 +16,7 @@ X5 = 1.0e-12
 X6 = 1.0
 X7 = 1.0e-12
 
+#indexes for substances
 S1 = 0
 S2 = 1
 
@@ -74,13 +75,15 @@ cvodes_mem = cvodes.CVodeCreate(cvodes.CV_BDF, cvodes.CV_NEWTON)
 #
 cvodes.CVodeMalloc(cvodes_mem, f, 0.0, y, cvodes.CV_SS, 1.0e-8, 1.0e-12)
 cvodes.CVodeSetFdata(cvodes_mem, ctypes.pointer(data)) #point to the sens data
-cvodes.CVDense (cvodes_mem, 2) #choice of linear solver, cvdense, cvband, etc
+cvodes.CVDense(cvodes_mem, 2) #choice of linear solver, cvdense, cvband, etc
  
 #
 #create NvectorArray of size "# of variables" x "# of params for sensitivities"
 #
 yS = nvecserial.NVectorArray([([0]*2)]*4)
 
+# 
+#
 cvodes.CVodeSensMalloc(cvodes_mem, 4, cvodes.CV_SIMULTANEOUS, yS)
 
 # So this bit below might seem like magic , but it's fairly straight
@@ -101,28 +104,31 @@ cvodes.CVodeSensMalloc(cvodes_mem, 4, cvodes.CV_SIMULTANEOUS, yS)
 #    sensitivities
 
 cvodes.CVodeSetSensParams(cvodes_mem,
-                          data.p, # we have four system parameters ( The four VMax's)
-                          [1]*4,  # they should all be scaled by 1, i.e. unscaled,
-                          [1]*4   # they all contribute to the estimation of sensitivities
+                          data.p, # we have four system parameters ( The four V's)
+                          [1, 1, 1, 1],  # they should all be scaled by 1, i.e. unscaled,
+                          [1, 1, 1, 1]   # contrib to sensitivities estimation
                           )
 
-results = ([], [], [], [], [], [])
+results = ([], [], [], [], [], [], [], [], [], [])
 
-t = cvodes.realtype (0.0)
+t = cvodes.realtype(0.0)
 results[0].append(t.value)
 results[1].append(y[S1])
 results[2].append(y[S2])
 results[3].append((icsum- y[S2]))
 results[4].append(yS[V2][S1])
 results[5].append(yS[V2][S2])
-
-ciout = 1
+results[6].append(yS[V3][S1])
+results[7].append(yS[V3][S1])
+results[8].append(yS[V4][S1])
+results[9].append(yS[V4][S2])
+iout = 1
 tout = 0.05
 while iout <= 80:
     ret = cvodes.CVode(cvodes_mem,
                        tout,
                        y,
-                       ctypes.byref (t),
+                       ctypes.byref(t),
                        cvodes.CV_NORMAL
                        )
     cvodes.CVodeGetSens(cvodes_mem, t, yS)
@@ -135,12 +141,15 @@ while iout <= 80:
     results[3].append((icsum -y[S2]))
     results[4].append(yS[V2][S1])
     results[5].append(yS[V2][S2])
-
+    results[6].append(yS[V3][S1])
+    results[7].append(yS[V3][S1])
+    results[8].append(yS[V4][S1])
+    results[9].append(yS[V4][S2])
     iout += 1
     tout += 0.1
 
 pyplot.figure(1)
-pyplot.subplot(211)
+pyplot.subplot(411)
 pyplot.ylabel("Concentration")
 pyplot.plot(
     results[0], results[1], "k-",
@@ -149,11 +158,28 @@ pyplot.plot(
     )
 pyplot.legend(("$S_1$", "$S_2$", "$S_3$"))
 
-pyplot.subplot (212)
+pyplot.subplot(412)
 pyplot.xlabel ("t")
 pyplot.plot(
     results[0], results[4], "k-",
-    results[0], results[5], "k--"
+    results[0], results[5], "k--",
     )
 pyplot.legend(("$\delta S_1/dV_2$", "$\delta S_2/dV_2$"))
+
+pyplot.subplot(413)
+pyplot.xlabel ("t")
+pyplot.plot(
+    results[0], results[4], "k-",
+    results[0], results[5], "k--",
+    )
+pyplot.legend(("$\delta S_1/dV_3$", "$\delta S_2/dV_3$"))
+
+pyplot.subplot(414)
+pyplot.xlabel ("t")
+pyplot.plot(
+    results[0], results[8], "b-",
+    results[0], results[9], "b--",
+    )
+pyplot.legend(("$\delta S_1/dV_4$", "$\delta S_2/dV_4$"))
+
 pyplot.show()

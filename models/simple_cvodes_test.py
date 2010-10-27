@@ -1,6 +1,5 @@
-from pysundials import cvode
-import ctypes
-import nvecserial
+from pysundials import cvodes
+import ctypes, nvecserial
 from matplotlib import pyplot
 
 # Simple reaction:
@@ -8,10 +7,22 @@ from matplotlib import pyplot
 # E + S <-> ES -> E + P
 #       k1r
 
+# structure to hold sensitivity data parameters
+class UserData(ctypes.Structure):
+    _fields_ = [('p', cvodes.realtype*3)] #3 parameters
+PUserData = ctypes.POINTER(UserData)
+
 # Parameters
-k1f = 1.0e-6  #units: of mol^-1 s^-1
-k1r = 1.0e-3  #units: s^-1
-k2  = 1.0e-2  #units: s^-1
+#k1f = 1.0e-6  #units: of mol^-1 s^-1
+#k1r = 1.0e-3  #units: s^-1
+#k2  = 1.0e-2  #units: s^-1
+k1f = 0
+k1r = 1
+k2  = 2
+data = UserData() 
+data.p[k1f] = 1.0e-6
+data.p[k1r] = 1.0e-3
+data.p[k2]  = 1.0e-2
 
 # Initial specs
 E0  = 10000 # y[0] init
@@ -19,17 +30,22 @@ S0  = 20000 # y[1] init
 ES0 = 0     # y[2] init
 P0  = 0     # y[3] init
 
-def Edot(y):
-    return (-k1f * y[0] * y[1]) + (k1r * y[2]) + (k2 * y[2])
+def Edot(y, p):
+    return (-p[k1f] * y[0] * y[1]) + (p[k1r] * y[2]) + (k2 * y[2])
 
-def Sdot(y):
-    return (-k1f * y[0] * y[1]) + (k1r * y[2])
+def Sdot(y, p):
+    return (-p[k1f] * y[0] * y[1]) + (p[k1r] * y[2])
 
-def ESdot(y):
-    return (k1f * y[0] * y[1]) - (k1r * y[2]) - (k2 *y[2])
+def ESdot(y, p):
+    return (p[k1f] * y[0] * y[1]) - (p[k1r] * y[2]) - (p[k2] *y[2])
 
-def Pdot(y):
-    return (k2 * y[2])
+def Pdot(y, p):
+    return (p[k2] * y[2])
+
+edot = 0
+sdot = 1
+esdot = 2
+pdot = 3
 
 # Right hand side definition:
 # The function specified takes the following parameters
@@ -38,10 +54,10 @@ def Pdot(y):
 # ydot (NVector)          undefined values, contents should be set to the new values of y
 # f_data (c_void_p)       pointer to user data set by CVodeSetFdata
 def f(t, y, ydot, f_data):
-    ydot[0] = Edot(y)
-    ydot[1] = Sdot(y)
-    ydot[2] = ESdot(y)
-    ydot[3] = Pdot(y)
+    ydot[edot] = Edot(y)
+    ydot[sdot] = Sdot(y)
+    ydot[esdot] = ESdot(y)
+    ydot[pdot] = Pdot(y)
     return 0
 
 y = cvode.NVector([E0, S0, ES0, P0]) #initial values for integration
@@ -78,53 +94,88 @@ cvode_mem = cvode.CVodeCreate(cvode.CV_BDF, cvode.CV_NEWTON) #stiff setup
 # reltol: (float) the relative tolerance scalar
 # abstol: (float/NVector) absolute tolerance(s) 
 #
-cvode.CVodeMalloc(cvode_mem, f, 0.0, y, cvode.CV_SS, 1.0e-8, 1.0e-12)
+abstol = cvodes.NVector([1.0e-8, 1.0e-14, 1.0e-6])
+reltol = cvodes.realtype(1.0e-4)
+cvode.CVodeMalloc(cvode_mem, f, 0.0, y, cvode.CV_SV, reltol, abstol)
 
+# Set optional inputs (in this case the sensitivity data pointers)
 #
+cvodes.CVodeSetFdata(cvodes_mem, ctypes.pointer(data)) #points to sensitivity data
+
 # call to the CVDense function links the main CVODE integrator with the CVDENSE linear solver
 # CVDense(cvodememobj, N)
 # cvodememobj: the memobject from CVodeCreate()
 # N: (int) the size (number of DE's?) of the ODE system
 cvode.CVDense(cvode_mem, 4)
 
+# set sensitivity system options 
+yS = nvecserial.NVectorArray([([0]*4)]*3)
+
 output = ([], [], [], [], [])
 
 t = cvode.realtype(0.0)
 results = ([], [], [], [], [])
 results[0].append(t.value)
-results[1].append(y[0])
-results[2].append(y[1])
-results[3].append(y[2])
-results[4].append(y[3])
+results[1].append(y[edot])
+results[2].append(y[sdot])
+results[3].append(y[esdot])
+results[4].append(y[pdot])
+results[5].append(yS[k1f][edot])  #dE/dk1f 
+results[6].append(yS[k1r][edot])  #dE/dk1r 
+results[7].append(yS[k2][edot])   #dE/dk2 
+results[8].append(yS[k1f][sdot])  #dS/dk1f 
+results[9].append(yS[k1r][sdot])  #dS/dk1r 
+results[10].append(yS[k2][sdot])  #dS/dk2 
+results[11].append(yS[k1f][esdot]) #dES/dk1f 
+results[12].append(yS[k1r][esdot]) #dES/dk1r 
+results[13].append(yS[k2][esdot]) #dES/dk2 
+results[14].append(yS[k1f][pdot])  #dP/dk1f 
+results[15].append(yS[k1r][pdot])  #dP/dk1r 
+results[16].append(yS[k2][pdot])  #dP/dk2 
 
 iout = 0
 tout = 0.1
 print "Beginning integration..."
 while iout < 10000:
 # call to the CVODE integrator
-# CVode(cvodememobj, tout, yout, tret, itask)
+# CVodes(cvodememobj, tout, yout, tret, itask)
 # cvodememobj: from CVodeCreate()
 # tout: (float), next time at which solution is desired
 # yout: (NVector) computed solution vector. in CV_NORMAL with no errors or roots found
 # tret: (*realtype) is set to the time reached by the solver
 # itask: (int) is one of CV_NORMAL, CV_ONE_STEP, CV_NORMAL_TSTOP, or CV_ONE_STEP_TSTOP
 #
-    ret = cvode.CVode(cvode_mem, tout, y, ctypes.byref(t), cvode.CV_NORMAL)
+    ret = cvodes.CVode(cvode_mem, tout, y, ctypes.byref(t), cvode.CV_NORMAL)
+    cvodes.CVodeGetSens(cvodes_mem, t, yS)
 
     if ret != 0:
         print "CVODE ERROR: %i"%(ret)
         break
 
     results[0].append(tout)
-    results[1].append(y[0])
-    results[2].append(y[1])
-    results[3].append(y[2])
-    results[4].append(y[3])
+    results[1].append(y[edot])
+    results[2].append(y[sdot])
+    results[3].append(y[esdot])
+    results[4].append(y[pdot])
+    results[5].append(yS[k1f][edot])  #dE/dk1f 
+    results[6].append(yS[k1r][edot])  #dE/dk1r 
+    results[7].append(yS[k2][edot])   #dE/dk2 
+    results[8].append(yS[k1f][sdot])  #dS/dk1f 
+    results[9].append(yS[k1r][sdot])  #dS/dk1r 
+    results[10].append(yS[k2][sdot])  #dS/dk2 
+    results[8].append(yS[k1f][esdot]) #dES/dk1f 
+    results[9].append(yS[k1r][esdot]) #dES/dk1r 
+    results[10].append(yS[k2][esdot]) #dES/dk2 
+    results[8].append(yS[k1f][pdot])  #dP/dk1f 
+    results[9].append(yS[k1r][pdot])  #dP/dk1r 
+    results[10].append(yS[k2][pdot])  #dP/dk2 
     
     iout += 1
     tout += 0.1
 print "Integration finished."
 
+pyplot.figure(1)
+pyplot.subplot(411)
 pyplot.plot(
     results[0], results[1], 'k-',
     results[0], results[2], 'k--',
@@ -133,4 +184,7 @@ pyplot.plot(
     )
 pyplot.legend(('E', 'S', 'ES', 'P'))
 
+pyplot.subplot(412)
+pyplot.plot(
+    results[0], results
     

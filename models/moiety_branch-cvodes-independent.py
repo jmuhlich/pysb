@@ -48,10 +48,10 @@ def R4(y, p):
  
 def f(t, y, ydot, f_data):
     data = ctypes.cast(f_data, PUserData).contents
-
     ydot [S2] = R2(y, data.p) - R1(y, data.p)
     ydot [S1] = R1(y, data.p) - R3(y, data.p) - R4(y, data.p)
     return 0
+
 # The previous assignment was:
 # V1 = 1.0
 # V2 = 10.0

@@ -33,7 +33,7 @@ ES0 = 0     # y[2] init
 P0  = 0     # y[3] init
 
 def Edot(y, p):
-    return (-p[k1f] * y[0] * y[1]) + (p[k1r] * y[2]) + (k2 * y[2])
+    return (-p[k1f] * y[0] * y[1]) + (p[k1r] * y[2]) + (p[k2] * y[2])
 
 def Sdot(y, p):
     return (-p[k1f] * y[0] * y[1]) + (p[k1r] * y[2])
@@ -97,7 +97,8 @@ cvodes_mem = cvodes.CVodeCreate(cvodes.CV_BDF, cvodes.CV_NEWTON) #stiff setup
 # reltol: (float) the relative tolerance scalar
 # abstol: (float/NVector) absolute tolerance(s) 
 #
-#abstol = cvodes.NVector([1.0e-8, 1.0e-14, 1.0e-6])
+#abstol = cvodes.NVector([1.0e-8, 1.0e-8, 1.0e-6])
+#abstol = cvodes.NVector([1.0e-2, 1.0e-2, 1.0e-2])
 abstol = 1.0e-12
 #reltol = cvodes.realtype(1.0e-4)
 reltol = 1.0e-8
@@ -115,6 +116,8 @@ cvodes.CVDense(cvodes_mem, 4)
 
 # set sensitivity system options 
 yS = nvecserial.NVectorArray([([0]*4)]*3)
+
+print 'yS:', yS
 
 # CVodeSensMalloc(cvodememobj, Ns, ism, yS0)
 #    CVodeSensMalloc allocates and initializes memory related to sensitivity computations.
@@ -174,9 +177,12 @@ while iout < 10000:
 # tret: (*realtype) is set to the time reached by the solver
 # itask: (int) is one of CV_NORMAL, CV_ONE_STEP, CV_NORMAL_TSTOP, or CV_ONE_STEP_TSTOP
 #
+    #print 'yS:\n', yS
+
     ret = cvodes.CVode(cvodes_mem, tout, y, ctypes.byref(t), cvodes.CV_NORMAL)
     cvodes.CVodeGetSens(cvodes_mem, t, yS)
     
+
     if ret != 0:
         print "CVODES ERROR: %i"%(ret)
         break
@@ -247,4 +253,4 @@ pyplot.plot(
     )
 pyplot.legend(('$\delta P/dk1f $', '$\delta P/dk1r $', '$\delta P/dk2 $'))
 
-pyplot.show()
+#pyplot.show()

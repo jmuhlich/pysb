@@ -46,7 +46,7 @@ def R3(y, p):
 def R4(y, p):
     return (p[V4]*y[S1])/(y[S1] + K4_S1)
  
-def f(t, y, ydot, f_data):
+def func(t, y, ydot, f_data):
     data = ctypes.cast(f_data, PUserData).contents
     ydot [S2] = R2(y, data.p) - R1(y, data.p)
     ydot [S1] = R1(y, data.p) - R3(y, data.p) - R4(y, data.p)
@@ -73,7 +73,7 @@ cvodes_mem = cvodes.CVodeCreate(cvodes.CV_BDF, cvodes.CV_NEWTON)
 # reltol and abstol can be values or vectors
 # if using a vector then cvodes.CV_SV shuold be used
 #
-cvodes.CVodeMalloc(cvodes_mem, f, 0.0, y, cvodes.CV_SS, 1.0e-8, 1.0e-12)
+cvodes.CVodeMalloc(cvodes_mem, func, 0.0, y, cvodes.CV_SS, 1.0e-8, 1.0e-12)
 cvodes.CVodeSetFdata(cvodes_mem, ctypes.pointer(data)) #point to the sens data
 cvodes.CVDense(cvodes_mem, 2) #choice of linear solver, cvdense, cvband, etc
  

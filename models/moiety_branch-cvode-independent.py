@@ -53,7 +53,7 @@ cvode.CVDense (cvode_mem , 2)
 
 results = ([] , [], [], [])
 
-t = cvode . realtype (0.0)
+t = cvode.realtype(0.0)
 results [0]. append (t.value)
 results [1]. append (y[S1])
 results [2]. append (y[S2])
@@ -66,7 +66,7 @@ while iout <= 50:
         cvode_mem,
         tout,
         y,
-        ctypes.byref (t),
+        ctypes.byref(t),
         cvode.CV_NORMAL
         )
     if ret != 0:

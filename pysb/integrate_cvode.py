@@ -2,6 +2,9 @@ import pysb.bng
 import numpy, sympy, re, ctypes
 from pysundials import cvode
 
+#FIXME: this should have an ODEINIT section function and a few functions, an
+#       odesolve, an odesolveSens, and odesolvesensedky or something like this
+
 def odesolve(model, tfinal):
     # Generate the ODES (Jah sucks at comments)
     pysb.bng.generate_equations(model)

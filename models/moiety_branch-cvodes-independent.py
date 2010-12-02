@@ -60,7 +60,7 @@ def func(t, y, ydot, f_data):
 # Now they are added into the new data.p object
 data = UserData() #define an instance of UserData
 data.p[V1] = 1.0
-data.p[V2] = 10.0
+data.p[V2] = 10.
 data.p[V3] = 1.0
 data.p[V4] = 1.0
 
@@ -142,7 +142,7 @@ while iout <= 80:
     results[4].append(yS[V2][S1])
     results[5].append(yS[V2][S2])
     results[6].append(yS[V3][S1])
-    results[7].append(yS[V3][S1])
+    results[7].append(yS[V3][S2])
     results[8].append(yS[V4][S1])
     results[9].append(yS[V4][S2])
     iout += 1
@@ -169,8 +169,8 @@ pyplot.legend(("$\delta S_1/dV_2$", "$\delta S_2/dV_2$"))
 pyplot.subplot(413)
 pyplot.xlabel ("t")
 pyplot.plot(
-    results[0], results[4], "k-",
-    results[0], results[5], "k--",
+    results[0], results[6], "r-",
+    results[0], results[7], "r--",
     )
 pyplot.legend(("$\delta S_1/dV_3$", "$\delta S_2/dV_3$"))
 

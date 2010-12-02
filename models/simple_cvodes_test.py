@@ -22,13 +22,13 @@ k1r = 1
 k2  = 2
 
 data = UserData() 
-data.p[k1f] = 1.0e-6
+data.p[k1f] = 5.0e-5
 data.p[k1r] = 1.0e-3
-data.p[k2]  = 1.0e-2
+data.p[k2]  = 1.0e-1
 
 # Initial specs
 E0  = 10000 # y[0] init
-S0  = 20000 # y[1] init
+S0  = 10000 # y[1] init
 ES0 = 0     # y[2] init
 P0  = 0     # y[3] init
 
@@ -98,7 +98,7 @@ cvodes_mem = cvodes.CVodeCreate(cvodes.CV_BDF, cvodes.CV_NEWTON) #stiff setup
 # abstol: (float/NVector) absolute tolerance(s) 
 #
 #abstol = cvodes.NVector([1.0e-8, 1.0e-8, 1.0e-6])
-#abstol = cvodes.NVector([1.0e-2, 1.0e-2, 1.0e-2])
+#abstol = cvodes.NVector([1.0e-12, 1.0e-12, 1.0e-12])
 abstol = 1.0e-12
 #reltol = cvodes.realtype(1.0e-4)
 reltol = 1.0e-8
@@ -126,7 +126,7 @@ print 'yS:', yS
 #    ism (int):type of corrector used in sensitivity analysis. 
 #    yS0 (NVectorArray)              is the array of initial condition vectors for sensitivity variables
 
-cvodes.CVodeSensMalloc(cvodes_mem, 3, cvodes.CV_SIMULTANEOUS, yS)
+cvodes.CVodeSensMalloc(cvodes_mem, 3, cvodes.CV_STAGGERED, yS)
 
 # CVodeSetSensParams expects four parameters
 # (for more detail see p. 111 of the CVODES user guide)
@@ -136,14 +136,14 @@ cvodes.CVodeSensMalloc(cvodes_mem, 3, cvodes.CV_SIMULTANEOUS, yS)
 #    are and can peturb them, presumably)
 # 3. an array (i.e. list) of scaling factors, one for each parameter
 #    for which sensitivies are to be determined
-# 4. an array of integers (either 1 or 0) , where a 1 indicates the
-#    respective parameter value should be used in estimating
-#    sensitivities
+# 4. a list of integers that specify which parameter will be
+#    used to estimate sensitivities
+#    **SEE CVODES MANUAL
 
 cvodes.CVodeSetSensParams(cvodes_mem,
                           data.p, 
                           [1, 1, 1],
-                          [1, 1, 1]
+                          [0, 1, 2]
                           )
 t = cvodes.realtype(0.0)
 results = [[] for i in range(0,17)]
@@ -168,7 +168,7 @@ results[16].append(yS[k2][pdot])  #dP/dk2
 iout = 0
 tout = 0.1
 print "Beginning integration..."
-while iout < 10000:
+while iout < 1000:
 # call to the CVODES integrator
 # Cvodess(cvodesmemobj, tout, yout, tret, itask)
 # cvodesmemobj: from CvodesCreate()
@@ -180,8 +180,9 @@ while iout < 10000:
     #print 'yS:\n', yS
 
     ret = cvodes.CVode(cvodes_mem, tout, y, ctypes.byref(t), cvodes.CV_NORMAL)
+    #print y
     cvodes.CVodeGetSens(cvodes_mem, t, yS)
-    
+    #print yS
 
     if ret != 0:
         print "CVODES ERROR: %i"%(ret)
@@ -223,16 +224,16 @@ pyplot.legend(('E', 'S', 'ES', 'P'))
 pyplot.subplot(512)
 pyplot.plot(
     results[0], results[5], 'k-',  
-    results[0], results[6], 'k--', 
-    results[0], results[7], 'k-.'
+    results[0], results[6], 'r--', 
+    results[0], results[7], 'b-.'
     )
 pyplot.legend(('$\delta E/dk1f $', '$\delta E/dk1r $', '$\delta E/dk2 $'))
 
 pyplot.subplot(513)
 pyplot.plot(
-    results[0], results[8], 'k-',  
-    results[0], results[9], 'k--', 
-    results[0], results[10], 'k-.'
+    results[0], results[8],  'k-',  
+    results[0], results[9],  'r--', 
+    results[0], results[10], 'b-.'
     )
 pyplot.legend(('$\delta S/dk1f $', '$\delta S/dk1r $', '$\delta S/dk2 $'))
 
@@ -248,8 +249,8 @@ pyplot.subplot(515)
 pyplot.xlabel("t")
 pyplot.plot(
     results[0], results[14], 'k-',  
-    results[0], results[15], 'k--', 
-    results[0], results[16], 'k-.'
+    results[0], results[15], 'r--', 
+    results[0], results[16], 'b-.'
     )
 pyplot.legend(('$\delta P/dk1f $', '$\delta P/dk1r $', '$\delta P/dk2 $'))
 

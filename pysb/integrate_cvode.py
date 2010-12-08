@@ -18,7 +18,7 @@ def odesolve(model, tfinal):
 
     # assign the initial conditions
     # FIXME: code outside of model shouldn't handle parameter_overrides 
-    # FIXME: Species really should be a class with methods such as .name, .index, etc... jah is good at this
+    # FIXME: require user to pass the parameters THEY want?
     for cplxptrn, ic_parm in model.initial_conditions:
         override = model.parameter_overrides.get(ic_parm.name)
         if override is not None:

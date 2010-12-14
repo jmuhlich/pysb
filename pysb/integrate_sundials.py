@@ -52,20 +52,22 @@ def odeinit(model, senslist=None):
     
     # get parameters from BNG
     # get a key:value parameters dict. notice these are local values
-    # make the values global
-    for i in range(0, len(model.parameters)):
-        key = model.parameters[i].name
-        if "_0" in key:
-            continue
-        else:
-            globals()[model.parameters[i].name] = model.parameters[i].value
-
+    numparams = len(model.parameters)
+    params = numpy.zeros(numparams)
+    for i in range(0, numparams):
+        # notice: params[i] ~ model.parameters[i].name ~ model.parameters[i].value
+        # IN THAT ORDER
+        params[i] = model.parameters[i].value
+        
     print "initial parameter values:\n", y
 
     # make a dict of ydot functions. notice the functions are in this namespace.
+    # replace the kxxxx constants with elements from the params array
     funcs = {}
     for i in range(0,odesize):
         tempstring = re.sub(r's(\d+)', lambda m: 'y[%s]'%(int(m.group(1))), str(model.odes[i]))
+        for j in range(0, numparams):
+            tempstring = tempstring.replace(model.parameters[j].name, "p[%d]"%j)
         def tempfunc(y): return eval(tempstring)
         funcs[i] = tempfunc
 

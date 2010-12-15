@@ -7,10 +7,13 @@ from pysundials import cvode
 
 def odeinit(model, senslist=None):
 
+    #Generate ODES from BNG
+    pysb.bng.generate_equations(model)
+
     # senslist is defined only if the sensitivity list is passed
-    # by the function calling ODEinit. This is just a sanity check.
-    # if the sensitivity list is empty then allocate space for 
-    # sensitivity analysis of the whole system.
+    # by the function calling ODEinit. 
+    # if the sensitivity list is empty then the default is to
+    # allocate space for sensitivity analysis of all the parameters.
     if senslist:
         #assign the ctypes object for sensitivity analysis
         if len(senslist) is 0:
@@ -18,17 +21,23 @@ def odeinit(model, senslist=None):
             senslist = [n for n in range(0, sensnum)]
         else:
             sensnum = len(senslist)
-        
+        # This results in a generic "p" array
         class UserData(ctypes.Structure):
             _fields_ = [('p', cvodes.realtype*sensnum)] # parameters
         PUserData = ctypes.POINTER(UserData)
         data = UserData() 
-
+        # Store the parameter values in the cvodes array
         for i in range(0, sensnum):
+            # notice: p[i] ~ model.parameters[i].name ~ model.parameters[i].value
             data.p[i] = model.parameters[senslist[i]].value
-
-    #Generate ODES
-    pysb.bng.generate_equations(model)
+    else:
+        # if no sensitivity analysis is needed allocate the "p" array as a 
+        # numpy array that can be called by "f" as needed
+        numparams = len(model.parameters)
+        p = numpy.zeros(numparams)
+        for i in range(0, numparams):
+            # notice: p[i] ~ model.parameters[i].name ~ model.parameters[i].value
+            p[i] = model.parameters[i].value
     
     # Get the size of the ODE array
     odesize = len(model.odes)
@@ -50,25 +59,19 @@ def odeinit(model, senslist=None):
     # initialize y with the yzero values
     y = cvode.NVector(yzero)
     
-    # get parameters from BNG
-    # get a key:value parameters dict. notice these are local values
-    numparams = len(model.parameters)
-    params = numpy.zeros(numparams)
-    for i in range(0, numparams):
-        # notice: params[i] ~ model.parameters[i].name ~ model.parameters[i].value
-        # IN THAT ORDER
-        params[i] = model.parameters[i].value
-        
     print "initial parameter values:\n", y
 
     # make a dict of ydot functions. notice the functions are in this namespace.
     # replace the kxxxx constants with elements from the params array
     funcs = {}
     for i in range(0,odesize):
+        # first get the function string from sympy
         tempstring = re.sub(r's(\d+)', lambda m: 'y[%s]'%(int(m.group(1))), str(model.odes[i]))
+        # now replace the constants with 'p' array names; cycle through the whole list
         for j in range(0, numparams):
-            tempstring = tempstring.replace(model.parameters[j].name, "p[%d]"%j)
-        def tempfunc(y): return eval(tempstring)
+            tempstring = re.sub('(?<![A-Za-z0-9_])%s(?![A-Za-z0-9_])'%(model.parameters[j].name),
+                                'p[%d]'%(j), tempstring)
+        def tempfunc(y, p): return eval(tempstring)
         funcs[i] = tempfunc
 
     # use the ydots to build the function for analysis
@@ -76,10 +79,10 @@ def odeinit(model, senslist=None):
     #        map a dict to a function. although I love python I miss C pointers. Perhaps ctypes?
     def f(t, y, ydot, f_data):
         for i in range(0,len(model.odes)):
-            ydot[i] = funcs[i](y)
+            ydot[i] = funcs[i](y, p)
         return 0
     
-    return f, funcs, y, ydot, odesize
+    return f, funcs, y, ydot, odesize, p
 
 
 

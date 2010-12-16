@@ -10,35 +10,6 @@ def odeinit(model, senslist=None):
     #Generate ODES from BNG
     pysb.bng.generate_equations(model)
 
-    # senslist is defined only if the sensitivity list is passed
-    # by the function calling ODEinit. 
-    # if the sensitivity list is empty then the default is to
-    # allocate space for sensitivity analysis of all the parameters.
-    if senslist:
-        #assign the ctypes object for sensitivity analysis
-        if len(senslist) is 0:
-            sensnum = len(model.parameters)
-            senslist = [n for n in range(0, sensnum)]
-        else:
-            sensnum = len(senslist)
-        # This results in a generic "p" array
-        class UserData(ctypes.Structure):
-            _fields_ = [('p', cvodes.realtype*sensnum)] # parameters
-        PUserData = ctypes.POINTER(UserData)
-        data = UserData() 
-        # Store the parameter values in the cvodes array
-        for i in range(0, sensnum):
-            # notice: p[i] ~ model.parameters[i].name ~ model.parameters[i].value
-            data.p[i] = model.parameters[senslist[i]].value
-    else:
-        # if no sensitivity analysis is needed allocate the "p" array as a 
-        # numpy array that can be called by "f" as needed
-        numparams = len(model.parameters)
-        p = numpy.zeros(numparams)
-        for i in range(0, numparams):
-            # notice: p[i] ~ model.parameters[i].name ~ model.parameters[i].value
-            p[i] = model.parameters[i].value
-    
     # Get the size of the ODE array
     odesize = len(model.odes)
     
@@ -77,14 +48,43 @@ def odeinit(model, senslist=None):
     # use the ydots to build the function for analysis
     # FIXME: the best way i could think of not doing an "exec" or an "eval" in each loop was to
     #        map a dict to a function. although I love python I miss C pointers. Perhaps ctypes?
-    def f(t, y, ydot, f_data):
-        for i in range(0,len(model.odes)):
-            ydot[i] = funcs[i](y, p)
-        return 0
-    
+    # senslist is defined only if the sensitivity list is passed
+    # by the function calling ODEinit. 
+    # if the sensitivity list is empty then the default is to
+    # allocate space for sensitivity analysis of all the parameters.
+    if senslist:
+        #assign the ctypes object for sensitivity analysis
+        if len(senslist) is 0:
+            sensnum = len(model.parameters)
+            senslist = [n for n in range(0, sensnum)]
+        else:
+            sensnum = len(senslist)
+        # This results in a generic "p" array
+        class UserData(ctypes.Structure):
+            _fields_ = [('p', cvodes.realtype*sensnum)] # parameters
+        PUserData = ctypes.POINTER(UserData)
+        data = UserData() 
+        # Store the parameter values in the cvodes array
+        for i in range(0, sensnum):
+            # notice: p[i] ~ model.parameters[i].name ~ model.parameters[i].value
+            data.p[i] = model.parameters[senslist[i]].value
+        def f(t, y, ydot, f_data):
+            for i in range(0,len(model.odes)):
+                ydot[i] = funcs[i](y, data.p)
+            return 0
+    else:
+        # if no sensitivity analysis is needed allocate the "p" array as a 
+        # numpy array that can be called by "f" as needed
+        numparams = len(model.parameters)
+        p = numpy.zeros(numparams)
+        for i in range(0, numparams):
+            # notice: p[i] ~ model.parameters[i].name ~ model.parameters[i].value
+            p[i] = model.parameters[i].value
+        def f(t, y, ydot, f_data):
+            for i in range(0,len(model.odes)):
+                ydot[i] = funcs[i](y, p)
+            return 0
     return f, funcs, y, ydot, odesize, p
-
-
 
 def odesolve(model, tfinal):
     SOMEFLAG = True

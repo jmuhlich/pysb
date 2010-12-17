@@ -29,7 +29,8 @@ def odeinit(model, senslist=None):
 
     # initialize y with the yzero values
     y = cvode.NVector(yzero)
-    
+    numparams = len(model.parameters)
+        
     print "initial parameter values:\n", y
 
     # make a dict of ydot functions. notice the functions are in this namespace.
@@ -75,7 +76,6 @@ def odeinit(model, senslist=None):
     else:
         # if no sensitivity analysis is needed allocate the "p" array as a 
         # numpy array that can be called by "f" as needed
-        numparams = len(model.parameters)
         p = numpy.zeros(numparams)
         for i in range(0, numparams):
             # notice: p[i] ~ model.parameters[i].name ~ model.parameters[i].value
@@ -89,7 +89,7 @@ def odeinit(model, senslist=None):
 def odesolve(model, tfinal):
     SOMEFLAG = True
     if SOMEFLAG:
-        f, funcs, y, ydot, odesize = odeinit(model)
+        f, funcs, y, ydot, odesize, p = odeinit(model)
     
     # initialize the cvode memory object
     cvode_mem = cvode.CVodeCreate(cvode.CV_BDF, cvode.CV_NEWTON)

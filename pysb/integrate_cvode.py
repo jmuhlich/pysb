@@ -85,6 +85,7 @@ def odesolve(model, tfinal):
 
         # increase the while counter
         iout += 1
+        tout += 0.1
     print "Integration finished"
 
     return output

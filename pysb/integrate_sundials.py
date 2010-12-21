@@ -86,7 +86,8 @@ def odeinit(model, senslist=None):
             return 0
     return f, funcs, y, ydot, odesize, p
 
-def odesolve(model, tfinal):
+def odesolve(model, tfinal, tfreq = 100, tinit = 0.0):
+    tadd = tfinal/tfreq
     SOMEFLAG = True
     if SOMEFLAG:
         f, funcs, y, ydot, odesize, p = odeinit(model)
@@ -105,12 +106,13 @@ def odesolve(model, tfinal):
     for i in range(0, odesize+1): #leave one for the timestamp
         output.append([])
 
-    t = cvode.realtype(0.0)
-    iout = 0 #initial time
-    tout = 0.1 #time of next integration
-    
-    print "Beginning integration"
-    while iout < tfinal:
+    t = cvode.realtype(tinit-.1)
+    tout = tinit
+
+    print "Beginning integration, TINIT:", tinit, "TFINAL:", tfinal, "TADD:", tadd
+    while tinit < tfinal:
+        #print y
+        #print tout, t
         ret = cvode.CVode(cvode_mem, tout, y, ctypes.byref(t), cvode.CV_NORMAL)
         
         if ret !=0:
@@ -121,7 +123,7 @@ def odesolve(model, tfinal):
             output[i].append(y[i])
 
         # increase the while counter
-        iout += 1
+        tinit += tadd
     print "Integration finished"
 
     return output

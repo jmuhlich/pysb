@@ -108,6 +108,7 @@ while iout < 10000:
 # tret: (*realtype) is set to the time reached by the solver
 # itask: (int) is one of CV_NORMAL, CV_ONE_STEP, CV_NORMAL_TSTOP, or CV_ONE_STEP_TSTOP
 #
+    print "cvt:", t, "tout:", tout
     ret = cvode.CVode(cvode_mem, tout, y, ctypes.byref(t), cvode.CV_NORMAL)
 
     if ret != 0:

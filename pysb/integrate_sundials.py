@@ -84,6 +84,8 @@ def odeinit(model, senslist=None):
             for i in range(0,len(model.odes)):
                 ydot[i] = funcs[i](y, p)
             return 0
+    #import code
+    #code.interact(local=locals())
     return f, funcs, y, ydot, odesize, p
 
 def odesolve(model, tfinal, tfreq = 100, tinit = 0.0):
@@ -107,7 +109,7 @@ def odesolve(model, tfinal, tfreq = 100, tinit = 0.0):
         output.append([])
 
     t = cvode.realtype(tinit-.1)
-    tout = tinit
+    tout = tinit + tadd
 
     print "Beginning integration, TINIT:", tinit, "TFINAL:", tfinal, "TADD:", tadd
     while tinit < tfinal:
@@ -124,8 +126,11 @@ def odesolve(model, tfinal, tfreq = 100, tinit = 0.0):
 
         # increase the while counter
         tinit += tadd
+        tout += tadd
     print "Integration finished"
 
+    import code
+    code.interact(local=locals())
     return output
 
 def odesenssolve(model, tfinal, senslist=None, reltol=1.0e-8, abstol=1.0e-12):

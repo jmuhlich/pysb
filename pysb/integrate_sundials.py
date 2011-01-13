@@ -35,7 +35,7 @@ def odeinit(model, senslist=None):
 
     # make a dict of ydot functions. notice the functions are in this namespace.
     # replace the kxxxx constants with elements from the params array
-    funcs = {}
+    rhs_exprs = []
     for i in range(0,odesize):
         # first get the function string from sympy, replace the the "sN" with y[N]
         tempstring = re.sub(r's(\d+)', lambda m: 'y[%s]'%(int(m.group(1))), str(model.odes[i]))
@@ -44,15 +44,10 @@ def odeinit(model, senslist=None):
             tempstring = re.sub('(?<![A-Za-z0-9_])%s(?![A-Za-z0-9_])'%(model.parameters[j].name),
                                 'p[%d]'%(j), tempstring)
 
-        #make a dictionary of functions for evaluation
+        # make a list of compiled rhs expressions which will be run by the integrator
         # use the ydots to build the function for analysis
-        # FIXME: the best way i could think of not doing an "exec" or an "eval" in each loop was to
-        #        map a dict to a function. although I love python I miss C pointers. Perhaps ctypes?
-        print tempstring
-        def funcs[i](y, p):
-            return eval(tempstring)
-        #def tempfunc(y, p): return eval(tempstring)
-        #funcs[i] = tempfunc
+        # (second arg is the "filename", useful for exception/debug output)
+        rhs_exprs.append(compile(tempstring, '<ydot[%s]>' % i, 'eval'))
 
     # senslist defined only if sensitivity list passed by function calling ODEinit. 
     # if senslist empty then the allocate space for sensitivity of all parameters.
@@ -78,7 +73,7 @@ def odeinit(model, senslist=None):
         def f(t, y, ydot, f_data):
             data = ctypes.cast(f_data, PUserData).contents
             for i in range(0,len(model.odes)):
-                ydot[i] = funcs[i](y, data.p)
+                ydot[i] = eval(rhs_exprs[i], None, {'y': y, 'p': data.p})
             return 0
     else:
         #create the structure to hold the parameters when calling the function
@@ -95,25 +90,19 @@ def odeinit(model, senslist=None):
             data.p[i] = model.parameters[i].value
         def f(t, y, ydot, f_data):
             data = ctypes.cast(f_data, PUserData).contents
+            rhs_locals = {'y': y, 'p': data.p}
             for i in range(0,len(model.odes)):
-                ydot[i] = funcs[i](y, data.p)
+                ydot[i] = eval(rhs_exprs[i], rhs_locals)
             return 0
-    #import code
-    #code.interact(local=locals())
-    print "INIT FUNCS:", funcs
-    return f, funcs, y, ydot, odesize, data
+
+    return f, rhs_exprs, y, ydot, odesize, data
 
 def odesolve(model, tfinal, tfreq = 100, tinit = 0.0):
     #tadd = tfinal/tfreq
     tadd = 1
     SOMEFLAG = True
     if SOMEFLAG:
-        f, funcs, y, ydot, odesize, data = odeinit(model)
-
-    print "SOLVE FUNCS:", funcs
-    
-    import code
-    code.interact(local = locals())
+        f, rhs_exprs, y, ydot, odesize, data = odeinit(model)
 
     # initialize the cvode memory object
     cvode_mem = cvode.CVodeCreate(cvode.CV_BDF, cvode.CV_NEWTON)
@@ -158,7 +147,7 @@ def odesolve(model, tfinal, tfreq = 100, tinit = 0.0):
 def odesenssolve(model, tfinal, senslist=None, reltol=1.0e-8, abstol=1.0e-12):
     SOMEFLAG = True
     if SOMEFLAG:
-        f, funcs, y, ydot, odesize, data = odeinit(model, senslist)
+        f, rhs_exprs, y, ydot, odesize, data = odeinit(model, senslist)
     
     # initialize the cvode memory object
     cvode_mem = cvode.CVodeCreate(cvode.CV_BDF, cvode.CV_NEWTON)

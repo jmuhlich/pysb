@@ -37,22 +37,25 @@ def odeinit(model, senslist=None):
     # replace the kxxxx constants with elements from the params array
     funcs = {}
     for i in range(0,odesize):
-        # first get the function string from sympy
+        # first get the function string from sympy, replace the the "sN" with y[N]
         tempstring = re.sub(r's(\d+)', lambda m: 'y[%s]'%(int(m.group(1))), str(model.odes[i]))
         # now replace the constants with 'p' array names; cycle through the whole list
         for j in range(0, numparams):
             tempstring = re.sub('(?<![A-Za-z0-9_])%s(?![A-Za-z0-9_])'%(model.parameters[j].name),
                                 'p[%d]'%(j), tempstring)
-        def tempfunc(y, p): return eval(tempstring)
-        funcs[i] = tempfunc
 
-    # use the ydots to build the function for analysis
-    # FIXME: the best way i could think of not doing an "exec" or an "eval" in each loop was to
-    #        map a dict to a function. although I love python I miss C pointers. Perhaps ctypes?
-    # senslist is defined only if the sensitivity list is passed
-    # by the function calling ODEinit. 
-    # if the sensitivity list is empty then the default is to
-    # allocate space for sensitivity analysis of all the parameters.
+        #make a dictionary of functions for evaluation
+        # use the ydots to build the function for analysis
+        # FIXME: the best way i could think of not doing an "exec" or an "eval" in each loop was to
+        #        map a dict to a function. although I love python I miss C pointers. Perhaps ctypes?
+        print tempstring
+        def funcs[i](y, p):
+            return eval(tempstring)
+        #def tempfunc(y, p): return eval(tempstring)
+        #funcs[i] = tempfunc
+
+    # senslist defined only if sensitivity list passed by function calling ODEinit. 
+    # if senslist empty then the allocate space for sensitivity of all parameters.
     if senslist:
         #assign the ctypes object for sensitivity analysis
         if len(senslist) is 0:
@@ -60,46 +63,67 @@ def odeinit(model, senslist=None):
             senslist = [n for n in range(0, sensnum)]
         else:
             sensnum = len(senslist)
+
+        #create the structure to hold the parameters when calling the function
         # This results in a generic "p" array
         class UserData(ctypes.Structure):
-            _fields_ = [('p', cvodes.realtype*sensnum)] # parameters
+            _fields_ = [('p', cvode.realtype*sensnum)] # parameters
         PUserData = ctypes.POINTER(UserData)
         data = UserData() 
+
         # Store the parameter values in the cvodes array
         for i in range(0, sensnum):
             # notice: p[i] ~ model.parameters[i].name ~ model.parameters[i].value
             data.p[i] = model.parameters[senslist[i]].value
         def f(t, y, ydot, f_data):
+            data = ctypes.cast(f_data, PUserData).contents
             for i in range(0,len(model.odes)):
                 ydot[i] = funcs[i](y, data.p)
             return 0
     else:
+        #create the structure to hold the parameters when calling the function
+        # This results in a generic "p" array
+        class UserData(ctypes.Structure):
+            _fields_ = [('p', cvode.realtype*numparams)] # parameters
+        PUserData = ctypes.POINTER(UserData)
+        data = UserData() 
+
         # if no sensitivity analysis is needed allocate the "p" array as a 
-        # numpy array that can be called by "f" as needed
-        p = numpy.zeros(numparams)
+        # pointer array that can be called by sundials "f" as needed
         for i in range(0, numparams):
             # notice: p[i] ~ model.parameters[i].name ~ model.parameters[i].value
-            p[i] = model.parameters[i].value
+            data.p[i] = model.parameters[i].value
         def f(t, y, ydot, f_data):
+            data = ctypes.cast(f_data, PUserData).contents
             for i in range(0,len(model.odes)):
-                ydot[i] = funcs[i](y, p)
+                ydot[i] = funcs[i](y, data.p)
             return 0
     #import code
     #code.interact(local=locals())
-    return f, funcs, y, ydot, odesize, p
+    print "INIT FUNCS:", funcs
+    return f, funcs, y, ydot, odesize, data
 
 def odesolve(model, tfinal, tfreq = 100, tinit = 0.0):
-    tadd = tfinal/tfreq
+    #tadd = tfinal/tfreq
+    tadd = 1
     SOMEFLAG = True
     if SOMEFLAG:
-        f, funcs, y, ydot, odesize, p = odeinit(model)
+        f, funcs, y, ydot, odesize, data = odeinit(model)
+
+    print "SOLVE FUNCS:", funcs
     
+    import code
+    code.interact(local = locals())
+
     # initialize the cvode memory object
     cvode_mem = cvode.CVodeCreate(cvode.CV_BDF, cvode.CV_NEWTON)
     
     # allocate the cvode memory as needed
     cvode.CVodeMalloc(cvode_mem, f, 0.0, y, cvode.CV_SS, 1.0e-8, 1.0e-12)
     
+    # point the parameters to the correct array
+    cvode.CVodeSetFdata(cvode_mem, ctypes.pointer(data))
+
     # link integrator with linear solver
     cvode.CVDense(cvode_mem, odesize)
     
@@ -129,14 +153,12 @@ def odesolve(model, tfinal, tfreq = 100, tinit = 0.0):
         tout += tadd
     print "Integration finished"
 
-    import code
-    code.interact(local=locals())
     return output
 
 def odesenssolve(model, tfinal, senslist=None, reltol=1.0e-8, abstol=1.0e-12):
     SOMEFLAG = True
     if SOMEFLAG:
-        f, funcs, y, ydot, odesize = odeinit(model, senslist)
+        f, funcs, y, ydot, odesize, data = odeinit(model, senslist)
     
     # initialize the cvode memory object
     cvode_mem = cvode.CVodeCreate(cvode.CV_BDF, cvode.CV_NEWTON)

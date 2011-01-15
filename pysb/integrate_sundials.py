@@ -2,8 +2,7 @@ import pysb.bng
 import numpy, sympy, re, ctypes
 from pysundials import cvode
 
-#FIXME: this should have an ODEINIT section function and a few functions, an
-#       odesolve, an odesolveSens, and odesolvesensedky or something like this
+#FIXME: add a odesolvesensedky function or add this function to odesenssolve
 
 def odeinit(model, senslist=None):
 
@@ -31,7 +30,7 @@ def odeinit(model, senslist=None):
     y = cvode.NVector(yzero)
     numparams = len(model.parameters)
         
-    print "initial parameter values:\n", y
+    #print "initial parameter values:\n", y
 
     # make a dict of ydot functions. notice the functions are in this namespace.
     # replace the kxxxx constants with elements from the params array
@@ -70,6 +69,8 @@ def odeinit(model, senslist=None):
         for i in range(0, sensnum):
             # notice: p[i] ~ model.parameters[i].name ~ model.parameters[i].value
             data.p[i] = model.parameters[senslist[i]].value
+
+        #Finally define the function that will be integrated
         def f(t, y, ydot, f_data):
             data = ctypes.cast(f_data, PUserData).contents
             for i in range(0,len(model.odes)):
@@ -97,9 +98,9 @@ def odeinit(model, senslist=None):
 
     return f, rhs_exprs, y, ydot, odesize, data
 
-def odesolve(model, tfinal, tfreq = 100, tinit = 0.0):
-    #tadd = tfinal/tfreq
-    tadd = 1
+def odesolve(model, tfinal, nsteps = 100, tinit = 0.0, reltol=1.0e-8, abstol=1.0e-12):
+    tadd = tfinal/nsteps
+
     SOMEFLAG = True
     if SOMEFLAG:
         f, rhs_exprs, y, ydot, odesize, data = odeinit(model)
@@ -108,7 +109,7 @@ def odesolve(model, tfinal, tfreq = 100, tinit = 0.0):
     cvode_mem = cvode.CVodeCreate(cvode.CV_BDF, cvode.CV_NEWTON)
     
     # allocate the cvode memory as needed
-    cvode.CVodeMalloc(cvode_mem, f, 0.0, y, cvode.CV_SS, 1.0e-8, 1.0e-12)
+    cvode.CVodeMalloc(cvode_mem, f, 0.0, y, cvode.CV_SS, reltol, abstol)
     
     # point the parameters to the correct array
     cvode.CVodeSetFdata(cvode_mem, ctypes.pointer(data))
@@ -117,32 +118,36 @@ def odesolve(model, tfinal, tfreq = 100, tinit = 0.0):
     cvode.CVDense(cvode_mem, odesize)
     
     #list of outputs
-    output = []
-    for i in range(0, odesize+1): #leave one for the timestamp
-        output.append([])
+    yout = numpy.zeros([nsteps, odesize])
+    xout = numpy.zeros(nsteps)
 
-    t = cvode.realtype(tinit-.1)
+    #initialize the arrays
+    print "Initial parameter values:", y
+    xout[0] = tinit
+    for i in range(0, odesize):
+        yout[0][i] = y[i]
+
+    t = cvode.realtype(tinit)
     tout = tinit + tadd
 
-    print "Beginning integration, TINIT:", tinit, "TFINAL:", tfinal, "TADD:", tadd
-    while tinit < tfinal:
-        #print y
-        #print tout, t
+    print "Beginning integration, TINIT:", tinit, "TFINAL:", tfinal, "TADD:", tadd, "ODESIZE:", odesize
+    for step in range(1, nsteps):
+
         ret = cvode.CVode(cvode_mem, tout, y, ctypes.byref(t), cvode.CV_NORMAL)
         
         if ret !=0:
             print "CVODE ERROR %i"%(ret)
             break
-        output[0].append(tout)
-        for i in range(1, odesize):
-            output[i].append(y[i])
 
-        # increase the while counter
-        tinit += tadd
+        xout[step]= tout
+        for i in range(0, odesize):
+            yout[step][i] = y[i]
+
+        # increase the time counter
         tout += tadd
     print "Integration finished"
 
-    return output
+    return (xout,yout)
 
 def odesenssolve(model, tfinal, senslist=None, reltol=1.0e-8, abstol=1.0e-12):
     SOMEFLAG = True
@@ -158,10 +163,10 @@ def odesenssolve(model, tfinal, senslist=None, reltol=1.0e-8, abstol=1.0e-12):
     # link integrator with linear solver
     cvode.CVDense(cvode_mem, odesize)
     
-    #list of outputs
-    output = []
+    #list of youts
+    yout = []
     for i in range(0, odesize+1): #leave one for the timestamp
-        output.append([])
+        yout.append([])
 
     t = cvode.realtype(0.0)
     iout = 0 #initial time
@@ -174,12 +179,12 @@ def odesenssolve(model, tfinal, senslist=None, reltol=1.0e-8, abstol=1.0e-12):
         if ret !=0:
             print "CVODE ERROR %i"%(ret)
             break
-        output[0].append(tout)
+        yout[0].append(tout)
         for i in range(1, odesize):
-            output[i].append(y[i])
+            yout[i].append(y[i])
 
         # increase the while counter
         iout += 1
     print "Integration finished"
 
-    return output
+    return yout

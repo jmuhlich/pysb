@@ -1,6 +1,6 @@
 import pysb.bng
-import numpy, sympy, re, ctypes
-from pysundials import cvode
+import numpy, sympy, re, ctypes, sys
+from pysundials import cvode, cvodes, nvecserial
 
 #FIXME: add a odesolvesensedky function or add this function to odesenssolve
 
@@ -47,54 +47,26 @@ def odeinit(model, senslist=None):
         # use the ydots to build the function for analysis
         # (second arg is the "filename", useful for exception/debug output)
         rhs_exprs.append(compile(tempstring, '<ydot[%s]>' % i, 'eval'))
+    
+    # Create the structure to hold the parameters when calling the function
+    # This results in a generic "p" array
+    class UserData(ctypes.Structure):
+        _fields_ = [('p', cvode.realtype*numparams)] # parameters
+    PUserData = ctypes.POINTER(UserData)
+    data = UserData() 
 
-    # senslist defined only if sensitivity list passed by function calling ODEinit. 
-    # if senslist empty then the allocate space for sensitivity of all parameters.
-    if senslist:
-        #assign the ctypes object for sensitivity analysis
-        if len(senslist) is 0:
-            sensnum = len(model.parameters)
-            senslist = [n for n in range(0, sensnum)]
-        else:
-            sensnum = len(senslist)
+    for i in range(0, numparams):
+        # notice: p[i] ~ model.parameters[i].name ~ model.parameters[i].value
+        data.p[i] = model.parameters[i].value
 
-        #create the structure to hold the parameters when calling the function
-        # This results in a generic "p" array
-        class UserData(ctypes.Structure):
-            _fields_ = [('p', cvode.realtype*sensnum)] # parameters
-        PUserData = ctypes.POINTER(UserData)
-        data = UserData() 
-
-        # Store the parameter values in the cvodes array
-        for i in range(0, sensnum):
-            # notice: p[i] ~ model.parameters[i].name ~ model.parameters[i].value
-            data.p[i] = model.parameters[senslist[i]].value
-
-        #Finally define the function that will be integrated
-        def f(t, y, ydot, f_data):
-            data = ctypes.cast(f_data, PUserData).contents
-            for i in range(0,len(model.odes)):
-                ydot[i] = eval(rhs_exprs[i], None, {'y': y, 'p': data.p})
-            return 0
-    else:
-        #create the structure to hold the parameters when calling the function
-        # This results in a generic "p" array
-        class UserData(ctypes.Structure):
-            _fields_ = [('p', cvode.realtype*numparams)] # parameters
-        PUserData = ctypes.POINTER(UserData)
-        data = UserData() 
-
-        # if no sensitivity analysis is needed allocate the "p" array as a 
-        # pointer array that can be called by sundials "f" as needed
-        for i in range(0, numparams):
-            # notice: p[i] ~ model.parameters[i].name ~ model.parameters[i].value
-            data.p[i] = model.parameters[i].value
-        def f(t, y, ydot, f_data):
-            data = ctypes.cast(f_data, PUserData).contents
-            rhs_locals = {'y': y, 'p': data.p}
-            for i in range(0,len(model.odes)):
-                ydot[i] = eval(rhs_exprs[i], rhs_locals)
-            return 0
+    # if no sensitivity analysis is needed allocate the "p" array as a 
+    # pointer array that can be called by sundials "f" as needed
+    def f(t, y, ydot, f_data):
+        data = ctypes.cast(f_data, PUserData).contents
+        rhs_locals = {'y': y, 'p': data.p}
+        for i in range(0,len(model.odes)):
+            ydot[i] = eval(rhs_exprs[i], rhs_locals)
+        return 0
 
     return f, rhs_exprs, y, ydot, odesize, data
 
@@ -134,7 +106,7 @@ def odesolve(model, tfinal, nsteps = 100, tinit = 0.0, reltol=1.0e-8, abstol=1.0
     for step in range(1, nsteps):
 
         ret = cvode.CVode(cvode_mem, tout, y, ctypes.byref(t), cvode.CV_NORMAL)
-        
+       
         if ret !=0:
             print "CVODE ERROR %i"%(ret)
             break
@@ -149,42 +121,99 @@ def odesolve(model, tfinal, nsteps = 100, tinit = 0.0, reltol=1.0e-8, abstol=1.0
 
     return (xout,yout)
 
-def odesenssolve(model, tfinal, senslist=None, reltol=1.0e-8, abstol=1.0e-12):
+def odesenssolve(model, tfinal, nsteps = 100, tinit = 0.0, 
+                 senslist=None, sensmaglist=None, reltol=1.0e-8, abstol=1.0e-12):
+    tadd = tfinal/nsteps
+
     SOMEFLAG = True
     if SOMEFLAG:
         f, rhs_exprs, y, ydot, odesize, data = odeinit(model, senslist)
+
+    if senslist = None:
+        #make a senslist for all parameters
+        senslist = [n for n in range(0, len(model.parameters))]
+
+    # the sensitivity function needs an array of the scaling factors for each parameter
+    # for which sensitivity will be calculated
+    # default a scale of "1" unless sensmaglist is passed
+    if sensmaglist is None and senslist is None:
+        sensmaglist = [1 for n in range(0, len(model.parameters))]
+    else if sensmaglist is None and senslist is not None:
+        #senslist was passed, assign mags of 1 to the items in senslist, 0 otherwise
+        sensmaglist = [0 for n in range(0, len(model.parameters))]
+        for n in senslist:
+            sensmaglist[n] = 1
+    else if sensmaglist is not None and senslist is not None:
+        #both of them were passed 
+        #check that sensmaglist is not zero at the right places
+        for n in senslist:
+            if sensmaglist[n] == 0.:
+                print "scale of sensitivity assigned incorrectly for parameter:", n
+                sys.exit()
+
+    numsens = len(senslist)
+
+    # set the sensitivity array
+    yS = nvecserial.NVectorArray([([0]*odesize)]*numsens)
+
+    # CVodeSensMalloc allocates and initializes memory for sensitivity computations
+    cvodes.CVodeSensMalloc(cvodes_mem, numsens, cvodes.CV_STAGGERED, yS)
+
+    # CVodeSetSensParams sets the parameters for the sensitivity function call
+    print "SENSLIST:", senslist
+    print "SENSMAGLIST:", sensmaglist
+
+    cvodes.CVodeSetSensParams(cvodes_mem, data.p,
+                              sensmaglist,
+                              senslist)
+
+    # point the user parameters to the correct array
+    cvodes.CVodeSetFdata(cvodes_mem, ctypes.pointer(data))
     
     # initialize the cvode memory object
-    cvode_mem = cvode.CVodeCreate(cvode.CV_BDF, cvode.CV_NEWTON)
+    cvodes_mem = cvodes.CVodeCreate(cvodes.CV_BDF, cvodes.CV_NEWTON)
     
-    # allocate the cvode memory as needed
-    cvode.CVodeMalloc(cvode_mem, f, 0.0, y, cvode.CV_SS, reltol, abstol)
+    # allocate the cvodes memory as needed
+    cvodes.CVodeMalloc(cvodes_mem, f, 0.0, y, cvodes.CV_SS, reltol, abstol)
     
     # link integrator with linear solver
-    cvode.CVDense(cvode_mem, odesize)
+    cvodes.CVDense(cvodes_mem, odesize)
     
-    #list of youts
-    yout = []
-    for i in range(0, odesize+1): #leave one for the timestamp
-        yout.append([])
+    #list of outputs
+    yout = numpy.zeros([nsteps, odesize])
+    xout = numpy.zeros(nsteps)
+    ysensout = numpy.zeros([odesize, nsteps, numsens])
 
-    t = cvode.realtype(0.0)
-    iout = 0 #initial time
-    tout = 0.1 #time of next integration
-    
-    print "Beginning integration"
+    #initialize the arrays
+    print "Initial parameter values:", y
+    xout[0] = tinit
+    for i in range(0, odesize):
+        yout[0][i] = y[i]
+
+    for i in range(0, (odesize*numsens)):
+        ysensout[i] = yS
+
+    t = cvode.realtype(tinit)
+    tout = tinit + tadd
+
+    print "Beginning integration, TINIT:", tinit, "TFINAL:", tfinal, "TADD:", tadd, "ODESIZE:", odesize
     while iout < tfinal:
-        ret = cvode.CVode(cvode_mem, tout, y, ctypes.byref(t), cvode.CV_NORMAL)
+        ret = cvodes.CVode(cvodes_mem, tout, y, ctypes.byref(t), cvodes.CV_NORMAL)
+        cvodes.CVodeGetSens(cvodes_mem, t, yS)
         
         if ret !=0:
-            print "CVODE ERROR %i"%(ret)
+            print "CVODES ERROR %i"%(ret)
             break
-        yout[0].append(tout)
-        for i in range(1, odesize):
-            yout[i].append(y[i])
 
-        # increase the while counter
-        iout += 1
+        xout[step]= tout
+        for i in range(0, odesize):
+            yout[step][i] = y[i]
+            for j in range(0, numsens):
+                ysensout[i][step][j] = yS[i][j] # yS[odesize][numsens]
+
+            
+        # increase the time counter
+        tout += tadd
     print "Integration finished"
 
-    return yout
+    return (xout, yout, ysensout)

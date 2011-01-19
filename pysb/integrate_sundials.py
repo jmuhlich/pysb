@@ -129,7 +129,7 @@ def odesenssolve(model, tfinal, nsteps = 100, tinit = 0.0,
     if SOMEFLAG:
         f, rhs_exprs, y, ydot, odesize, data = odeinit(model, senslist)
 
-    if senslist = None:
+    if senslist is None:
         #make a senslist for all parameters
         senslist = [n for n in range(0, len(model.parameters))]
 
@@ -138,18 +138,20 @@ def odesenssolve(model, tfinal, nsteps = 100, tinit = 0.0,
     # default a scale of "1" unless sensmaglist is passed
     if sensmaglist is None and senslist is None:
         sensmaglist = [1 for n in range(0, len(model.parameters))]
-    else if sensmaglist is None and senslist is not None:
+    elif sensmaglist is None and senslist is not None:
         #senslist was passed, assign mags of 1 to the items in senslist, 0 otherwise
         sensmaglist = [0 for n in range(0, len(model.parameters))]
         for n in senslist:
             sensmaglist[n] = 1
-    else if sensmaglist is not None and senslist is not None:
+    elif sensmaglist is not None and senslist is not None:
         #both of them were passed 
         #check that sensmaglist is not zero at the right places
         for n in senslist:
             if sensmaglist[n] == 0.:
                 print "scale of sensitivity assigned incorrectly for parameter:", n
                 sys.exit()
+    else:
+        print "something is really wrong with the SENSLIST or SENSMAGLIST"
 
     numsens = len(senslist)
 

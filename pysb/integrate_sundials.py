@@ -129,6 +129,9 @@ def odesenssolve(model, tfinal, nsteps = 100, tinit = 0.0,
     if SOMEFLAG:
         f, rhs_exprs, y, ydot, odesize, data = odeinit(model, senslist)
 
+    # initialize the cvode memory object
+    cvodes_mem = cvodes.CVodeCreate(cvodes.CV_BDF, cvodes.CV_NEWTON)
+
     if senslist is None:
         #make a senslist for all parameters
         senslist = [n for n in range(0, len(model.parameters))]
@@ -171,9 +174,6 @@ def odesenssolve(model, tfinal, nsteps = 100, tinit = 0.0,
 
     # point the user parameters to the correct array
     cvodes.CVodeSetFdata(cvodes_mem, ctypes.pointer(data))
-    
-    # initialize the cvode memory object
-    cvodes_mem = cvodes.CVodeCreate(cvodes.CV_BDF, cvodes.CV_NEWTON)
     
     # allocate the cvodes memory as needed
     cvodes.CVodeMalloc(cvodes_mem, f, 0.0, y, cvodes.CV_SS, reltol, abstol)

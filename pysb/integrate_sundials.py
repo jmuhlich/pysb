@@ -70,7 +70,7 @@ def odeinit(model, senslist=None):
 
     return f, rhs_exprs, y, ydot, odesize, data
 
-def odesolve(model, tfinal, nsteps = 100, tinit = 0.0, reltol=1.0e-8, abstol=1.0e-12):
+def odesolve(model, tfinal, nsteps = 100, tinit = 0.0, reltol=1.0e-7, abstol=1.0e-11):
     tadd = tfinal/nsteps
 
     SOMEFLAG = True
@@ -122,7 +122,7 @@ def odesolve(model, tfinal, nsteps = 100, tinit = 0.0, reltol=1.0e-8, abstol=1.0
     return (xout,yout)
 
 def odesenssolve(model, tfinal, nsteps = 100, tinit = 0.0, 
-                 senslist=None, sensmaglist=None, reltol=1.0e-8, abstol=1.0e-12):
+                 senslist=None, sensmaglist=None, reltol=1.0e-7, abstol=1.0e-11):
     tadd = tfinal/nsteps
 
     SOMEFLAG = True
@@ -192,14 +192,15 @@ def odesenssolve(model, tfinal, nsteps = 100, tinit = 0.0,
     for i in range(0, odesize):
         yout[0][i] = y[i]
 
-    for i in range(0, (odesize*numsens)):
-        ysensout[i] = yS
+    for n in range(0, numsens):
+        for o in range(0, odesize):
+            ysensout[i] = yS[n][o]
 
     t = cvode.realtype(tinit)
     tout = tinit + tadd
 
     print "Beginning integration, TINIT:", tinit, "TFINAL:", tfinal, "TADD:", tadd, "ODESIZE:", odesize
-    while iout < tfinal:
+    for step in range(1, nsteps):
         ret = cvodes.CVode(cvodes_mem, tout, y, ctypes.byref(t), cvodes.CV_NORMAL)
         cvodes.CVodeGetSens(cvodes_mem, t, yS)
         
@@ -211,7 +212,9 @@ def odesenssolve(model, tfinal, nsteps = 100, tinit = 0.0,
         for i in range(0, odesize):
             yout[step][i] = y[i]
             for j in range(0, numsens):
-                ysensout[i][step][j] = yS[i][j] # yS[odesize][numsens]
+                #import code
+                #code.interact(local=locals())
+                ysensout[i][step][j] = yS[j][i] # yS[numsens][odesize]
 
             
         # increase the time counter

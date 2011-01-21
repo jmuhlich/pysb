@@ -52,7 +52,10 @@ def generate_equations(model):
         model.odes = [sympy.S(0)] * len(model.species)
         while True:
             line = lines.next()
+            #print "LINE:", line
             if 'end reactions' in line: break
+            # import code
+            # code.interact(local=locals())
             (number, reactants, products, rate, rule) = line.strip().split()
             reactants = reactants.split(',')
             products = products.split(',')

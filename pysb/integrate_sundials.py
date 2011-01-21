@@ -7,6 +7,11 @@ from pysundials import cvode, cvodes, nvecserial
 def odeinit(model, senslist=None):
 
     #Generate ODES from BNG
+    # import code
+    # code.interact(local=locals())
+    # import pdb
+    # pdb.set_trace()
+
     pysb.bng.generate_equations(model)
 
     # Get the size of the ODE array
@@ -136,27 +141,22 @@ def odesenssolve(model, tfinal, nsteps = 100, tinit = 0.0,
         #make a senslist for all parameters
         senslist = [n for n in range(0, len(model.parameters))]
 
+    numsens = len(senslist)
+
     # the sensitivity function needs an array of the scaling factors for each parameter
     # for which sensitivity will be calculated
     # default a scale of "1" unless sensmaglist is passed
     if sensmaglist is None and senslist is None:
-        sensmaglist = [1 for n in range(0, len(model.parameters))]
+        sensmaglist = [1 for n in range(0, numsens)]
     elif sensmaglist is None and senslist is not None:
         #senslist was passed, assign mags of 1 to the items in senslist, 0 otherwise
-        sensmaglist = [0 for n in range(0, len(model.parameters))]
+        sensmaglist = [0 for n in range(0, numsens)]
         for n in senslist:
             sensmaglist[n] = 1
-    elif sensmaglist is not None and senslist is not None:
-        #both of them were passed 
-        #check that sensmaglist is not zero at the right places
-        for n in senslist:
-            if sensmaglist[n] == 0.:
-                print "scale of sensitivity assigned incorrectly for parameter:", n
-                sys.exit()
     else:
         print "something is really wrong with the SENSLIST or SENSMAGLIST"
 
-    numsens = len(senslist)
+    #FIXME: Should we remove the initial value sensitivities automatically?
 
     # set the sensitivity array
     yS = nvecserial.NVectorArray([([0]*odesize)]*numsens)

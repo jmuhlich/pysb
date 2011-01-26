@@ -95,8 +95,8 @@ def odesolve(model, tfinal, nsteps = 100, tinit = 0.0, reltol=1.0e-7, abstol=1.0
     cvode.CVDense(cvode_mem, odesize)
     
     #list of outputs
-    yout = numpy.zeros([nsteps, odesize])
     xout = numpy.zeros(nsteps)
+    yout = numpy.zeros([nsteps, odesize])
 
     #initialize the arrays
     print "Initial parameter values:", y
@@ -124,7 +124,16 @@ def odesolve(model, tfinal, nsteps = 100, tinit = 0.0, reltol=1.0e-7, abstol=1.0
         tout += tadd
     print "Integration finished"
 
-    return (xout,yout)
+    #now deal with observables
+    obs_names = [name for name, rp in model.observable_patterns]
+    yobs = numpy.zeros([nsteps, len(obs_names)])
+    
+    #sum up the correct entities
+    for i, name in enumerate(obs_names):
+        factors, species = zip(*model.observable_groups[name])
+        yobs[0] = (yout[:, species] * factors).sum(1)
+
+    return (xout,yobs,yout)
 
 def odesenssolve(model, tfinal, nsteps = 100, tinit = 0.0, 
                  senslist=None, sensmaglist=None, reltol=1.0e-7, abstol=1.0e-11):
@@ -221,4 +230,13 @@ def odesenssolve(model, tfinal, nsteps = 100, tinit = 0.0,
         tout += tadd
     print "Integration finished"
 
-    return (xout, yout, ysensout)
+    #now deal with observables
+    obs_names = [name for name, rp in model.observable_patterns]
+    yobs = numpy.zeros([nsteps, len(obs_names)])
+    
+    #sum up the correct entities
+    for i, name in enumerate(obs_names):
+        factors, species = zip(*model.observable_groups[name])
+        yobs[0] = (yout[:, species] * factors).sum(1)
+
+    return (xout, yobs, yout, ysensout)

@@ -126,13 +126,15 @@ def odesolve(model, tfinal, nsteps = 100, tinit = 0.0, reltol=1.0e-7, abstol=1.0
 
     #now deal with observables
     obs_names = [name for name, rp in model.observable_patterns]
-    yobs = numpy.zeros([nsteps, len(obs_names)])
+    yobs = numpy.zeros([len(obs_names), nsteps])
     
     #sum up the correct entities
     for i, name in enumerate(obs_names):
         factors, species = zip(*model.observable_groups[name])
         yobs[0] = (yout[:, species] * factors).sum(1)
 
+    #transpose yobs to make it easy to plot
+    yobs.T
     return (xout,yobs,yout)
 
 def odesenssolve(model, tfinal, nsteps = 100, tinit = 0.0, 
@@ -232,11 +234,13 @@ def odesenssolve(model, tfinal, nsteps = 100, tinit = 0.0,
 
     #now deal with observables
     obs_names = [name for name, rp in model.observable_patterns]
-    yobs = numpy.zeros([nsteps, len(obs_names)])
+    yobs = numpy.zeros([len(obs_names), nsteps])
     
     #sum up the correct entities
     for i, name in enumerate(obs_names):
         factors, species = zip(*model.observable_groups[name])
         yobs[0] = (yout[:, species] * factors).sum(1)
 
+    #transpose yobs to make it easy to plot
+    yobs.T
     return (xout, yobs, yout, ysensout)

@@ -76,6 +76,15 @@ def odeinit(model, senslist=None):
     return f, rhs_exprs, y, ydot, odesize, data
 
 def odesolve(model, tfinal, nsteps = 100, tinit = 0.0, reltol=1.0e-7, abstol=1.0e-11):
+    '''
+    model: a model object from pysb
+    tfinal: the final time to run the integration (in units of pysb model, usually second)
+    _calspec: passed from calibrate_anneal to know which observable to use as calibration ref
+    nsteps: the number of steps to take between time reports, default = 100
+    tinit: the initial time-step, default = 0.0
+    reltol: relative tolerance for sundials, default=1.0e-7
+    abstol: absolute tolerance for sundials, default=1.0e-11
+    '''
     tadd = tfinal/nsteps
 
     SOMEFLAG = True
@@ -137,8 +146,8 @@ def odesolve(model, tfinal, nsteps = 100, tinit = 0.0, reltol=1.0e-7, abstol=1.0
     yobs.T
     return (xout,yobs,yout)
 
-def odesenssolve(model, tfinal, nsteps = 100, tinit = 0.0, 
-                 senslist=None, sensmaglist=None, reltol=1.0e-7, abstol=1.0e-11):
+def odesenssolve(model, tfinal, nsteps = 100, tinit = 0.0, senslist=None,
+                 sensmaglist=None, reltol=1.0e-7, abstol=1.0e-11):
     tadd = tfinal/nsteps
 
     SOMEFLAG = True
@@ -265,9 +274,11 @@ def read_csv_array(fp):
     return (headstring, darray)
 
 
-def compare_data(array0, array0var=None, array1):
+def compare_data(array0, array1, array0var=None, obspec=None):
     """Compares two arrays of different size and returns the X^2 between them.
-    Uses the X axis as the unit to re-grid both arrays"""
+    Uses the X axis as the unit to re-grid both arrays
+    obspec: passed by odeanneal to know which observable to use for comparison
+    """
     # figure out the array shapes
     # this expects arrays of the form array([time, measurements])
     # the time is assumed to be roughly the same for both and the 
@@ -319,7 +330,7 @@ def compare_data(array0, array0var=None, array1):
     
     return objarray.sum()
     
-def odeanneal(model, tfinal, tinit = 0.0):
+def odeanneal(refarray, params, model, tfinal, obspec=0):
     '''
     paramarray: array of parameters, from the model
     eqns: dict of ode's
@@ -328,5 +339,15 @@ def odeanneal(model, tfinal, tinit = 0.0):
     # This is the feeder function for the anneal routine. It needs to:
     # 1- run the integration for the model with parameters as vars
     # 2- calculate the objective function and return it
-    # 3- do this every time it's called
+    # 3- return the difference
     
+    #FIXME: something about params here???? Say which params are being passed on by the fxn
+
+
+    # output contains xout, yobs, yout
+    output = odesolve(model, tfinal)
+    # specify which output is being compared!!
+    
+    arrdiff = compare_data(refarray, output[obspec], )
+    
+    return diff

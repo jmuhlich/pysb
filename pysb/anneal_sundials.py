@@ -6,7 +6,10 @@ from pysundials import cvode
 # These set of functions set up the system for annealing runs
 # and provide the runner function as input to annealing
 
-def annealinit(model, reltol=1.0e-7, abstol=1.0e-11, nsteps = 100):
+def annlinit(model, reltol=1.0e-7, abstol=1.0e-11, nsteps = 100):
+    '''
+    must be run to set up the environment for annealing with pysundials
+    '''
     # Generate equations
     pysb.bng.generate_equations(model)
     # Get the size of the ODE array
@@ -90,17 +93,20 @@ def annealinit(model, reltol=1.0e-7, abstol=1.0e-11, nsteps = 100):
     return [f, rhs_exprs, y, ydot, odesize, data, xout, yout, nsteps, cvode_mem]
 
 
-def annealodesolve(model, tfinal, initlist, tinit = 0.0):
-    f = initlist[0]
-    rhs_exprs = initlist[1]
-    y = initlist[2]
-    ydot = initlist[3]
-    odesize = initlist[4]
-    data = initlist[5]
-    xout = initlist[6]
-    yout = initlist[7]
-    nsteps = initlist[8]
-    cvode_mem = initlist[9]
+def annlodesolve(model, tfinal, envlist, tinit = 0.0):
+    '''
+    the ODE equaition solver taylored to work with the annealing algorithm
+    '''
+    f = envlist[0]
+    rhs_exprs = envlist[1]
+    y = envlist[2]
+    ydot = envlist[3]
+    odesize = envlist[4]
+    data = envlist[5]
+    xout = envlist[6]
+    yout = envlist[7]
+    nsteps = envlist[8]
+    cvode_mem = envlist[9]
 
     tadd = tfinal/nsteps
 
@@ -135,7 +141,11 @@ def annealodesolve(model, tfinal, initlist, tinit = 0.0):
 
     #transpose yobs to make it easy to plot
     yobs.T
-    return (xout,yobs,yout)
+
+    #merge the x and y arrays for easy analysis
+    xyobs = numpy.vstack((xout, yobs))
+
+    return (xyobs,xout,yout)
 
 def read_csv_array(fp):
     """returns the first string and a numpy array from a csv set of data"""
@@ -150,17 +160,15 @@ def read_csv_array(fp):
     headstring = templist.pop(0)
     #Now put these into a numpy array, assume they are all floats
     converters = tuple([float]*len(templist[0]))
-    #assume all entries in the list are the same length
-    darray = numpy.zeros((len(templist[0]), len(templist)))
+    darray = numpy.zeros((len(templist), len(templist[0])))
     for i, item in enumerate(templist):
         darray[i] = numpy.asarray(templist[i], dtype=darray.dtype)    
     return (headstring, darray)
 
 
-def compare_data(array0, array1, array0var=None, obspec=None):
+def compare_data(array0, array0axis, array1, array1axis, array0var=None):
     """Compares two arrays of different size and returns the X^2 between them.
     Uses the X axis as the unit to re-grid both arrays
-    obspec: passed by odeanneal to know which observable to use for comparison
     """
     # figure out the array shapes
     # this expects arrays of the form array([time, measurements])

@@ -1,12 +1,16 @@
 import pysb.bng
-import numpy, sympy, re, ctypes
+import numpy 
+import sympy 
+import re 
+import ctypes
 import csv
+import scipy.interpolate
 from pysundials import cvode
 
 # These set of functions set up the system for annealing runs
 # and provide the runner function as input to annealing
 
-def annlinit(model, reltol=1.0e-7, abstol=1.0e-11, nsteps = 100):
+def annlinit(model, reltol=1.0e-7, abstol=1.0e-11, nsteps = 1000):
     '''
     must be run to set up the environment for annealing with pysundials
     '''
@@ -140,12 +144,12 @@ def annlodesolve(model, tfinal, envlist, tinit = 0.0):
         yobs[0] = (yout[:, species] * factors).sum(1)
 
     #transpose yobs to make it easy to plot
-    yobs.T
+    #yobs.T
 
     #merge the x and y arrays for easy analysis
     xyobs = numpy.vstack((xout, yobs))
 
-    return (xyobs,xout,yout)
+    return (xyobs,xout,yout, yobs)
 
 def read_csv_array(fp):
     """returns the first string and a numpy array from a csv set of data"""
@@ -163,7 +167,10 @@ def read_csv_array(fp):
     darray = numpy.zeros((len(templist), len(templist[0])))
     for i, item in enumerate(templist):
         darray[i] = numpy.asarray(templist[i], dtype=darray.dtype)    
-    return (headstring, darray)
+   
+    #transpose to ease analysis
+    darray = darray.T
+    return (darray, headstring)
 
 
 def compare_data(array0, array0axis, array1, array1axis, array0var=None):
@@ -187,8 +194,9 @@ def compare_data(array0, array0axis, array1, array1axis, array0var=None):
         raise SystemExit("comparing arrays of different dimensions")
     
     # get the time range where the arrays overlap
-    rngmin = max(array0[:,0].min(), array1[:,0].min)
-    rngmax = min(array0[:,0].max(), array1[:,0].max)
+    rngmin = max(array0[0].min(), array1[0].min())
+    rngmax = min(array0[0].max(), array1[0].max())
+    print "RNGMIN, RNGMAX", rngmin, rngmax
     rngmin = round(rngmin, -1)
     rngmax = round(rngmax, -1)
     
@@ -197,21 +205,21 @@ def compare_data(array0, array0axis, array1, array1axis, array0var=None):
     # of the experiment has to be within the model range
     #
     iparray = numpy.zeros(array0.shape)
-    iparray[:,0] =  array0[:,0]
+    iparray[0] =  array0[0]
     
     # now create a b-spline of the data and fit it to desired range
-    tck = scipy.interpolate.splrep(array1[:,0], array1[:,1])
-    iparray[:,1] = scipy.interpolate.splev(iparray[:,0], tck)
+    tck = scipy.interpolate.splrep(array1[0], array1[1])
+    iparray[1] = scipy.interpolate.splev(iparray[0], tck)
     
     # we now have x and y axis for the points in the model array
     # calculate the objective function
     
-    diffarray = array0[:,1] - iparray[:,1]
+    diffarray = array0[1] - iparray[1]
     diffsqarray = diffarray * diffarray
     
     # assume a default .05 variance
     if array0var is None:
-        array0var = numpy.ones(iparray[:,1].shape)
+        array0var = numpy.ones(iparray[1].shape)
         array0var = array0var*.05
     
     array0var = numpy.multiply(array0var,array0var)

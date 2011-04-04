@@ -36,11 +36,13 @@ Rule('bax_inh_mcl1',
      kbaxmcl1f, kbaxmcl1r)
 
 # Initial conditions
-Parameter('BAX_0', 1e3)
+Parameter('BAX_0', 1e5)
 Initial(BAX(t1=None, t2=None, inh=None), BAX_0)
 Parameter('MCL1_0', 1e2)
 Initial(MCL1(b=None), MCL1_0)
 
+# Observe Dimer
+Observe('BAX2', BAX(t1=1, t2=None) % BAX(t1=None, t2=1))
 # We must fully specify all four BAX-BAX bonds, otherwise the pattern
 # is too loose, match a given species multiple times (beyond the
 # factor of four expected due to the rotational symmetry of the

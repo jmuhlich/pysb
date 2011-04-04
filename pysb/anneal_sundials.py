@@ -10,7 +10,7 @@ from pysundials import cvode
 # These set of functions set up the system for annealing runs
 # and provide the runner function as input to annealing
 
-def annlinit(model, reltol=1.0e-7, abstol=1.0e-11, nsteps = 1000):
+def annlinit(model, xpfname, reltol=1.0e-7, abstol=1.0e-11, nsteps = 1000):
     '''
     must be run to set up the environment for annealing with pysundials
     '''
@@ -94,10 +94,14 @@ def annlinit(model, reltol=1.0e-7, abstol=1.0e-11, nsteps = 1000):
     for i in range(0, odesize):
         yout[0][i] = y[i]
 
-    return [f, rhs_exprs, y, ydot, odesize, data, xout, yout, nsteps, cvode_mem]
+    #get the experimental data needed for annealing
+    xpfile = open(xpfname, "r")
+    xpdata = read_csv_array(xpfile)
+    
+    return [f, rhs_exprs, y, ydot, odesize, data, xout, yout, nsteps, cvode_mem], xpdata
 
 
-def annlodesolve(model, tfinal, envlist, tinit = 0.0):
+def annlodesolve(model, tfinal, envlist, tinit = 0.0, reltol=1.0e-7, abstol=1.0e-11):
     '''
     the ODE equaition solver taylored to work with the annealing algorithm
     '''
@@ -112,11 +116,13 @@ def annlodesolve(model, tfinal, envlist, tinit = 0.0):
     nsteps = envlist[8]
     cvode_mem = envlist[9]
 
+    cvode.CVodeReInit(cvode_mem, f, 0.0, y, cvode.CV_SS, reltol, abstol)
+
     tadd = tfinal/nsteps
 
     t = cvode.realtype(tinit)
     tout = tinit + tadd
-
+    
     print "Beginning integration, TINIT:", tinit, "TFINAL:", tfinal, "TADD:", tadd, "ODESIZE:", odesize
     for step in range(1, nsteps):
 
@@ -141,7 +147,7 @@ def annlodesolve(model, tfinal, envlist, tinit = 0.0):
     #sum up the correct entities
     for i, name in enumerate(obs_names):
         factors, species = zip(*model.observable_groups[name])
-        yobs[0] = (yout[:, species] * factors).sum(1)
+        yobs[i] = (yout[:, species] * factors).sum(1)
 
     #transpose yobs to make it easy to plot
     #yobs.T

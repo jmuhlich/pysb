@@ -79,6 +79,7 @@ def annlinit(model, xpfname, reltol=1.0e-7, abstol=1.0e-11, nsteps = 1000):
     # allocate the cvode memory as needed, pass the function and the init ys
     cvode.CVodeMalloc(cvode_mem, f, 0.0, y, cvode.CV_SS, reltol, abstol)
     # point the parameters to the correct array
+    # if the params are changed later this does not need to be reassigned (???)
     cvode.CVodeSetFdata(cvode_mem, ctypes.pointer(data))
     # link integrator with linear solver
     cvode.CVDense(cvode_mem, odesize)
@@ -101,9 +102,9 @@ def annlinit(model, xpfname, reltol=1.0e-7, abstol=1.0e-11, nsteps = 1000):
     return [f, rhs_exprs, y, ydot, odesize, data, xout, yout, nsteps, cvode_mem], xpdata
 
 
-def annlodesolve(model, tfinal, envlist, tinit = 0.0, reltol=1.0e-7, abstol=1.0e-11):
+def annlodesolve(model, tfinal, envlist, params, tinit = 0.0, reltol=1.0e-7, abstol=1.0e-11):
     '''
-    the ODE equaition solver taylored to work with the annealing algorithm
+    the ODE equation solver taylored to work with the annealing algorithm
     '''
     f = envlist[0]
     rhs_exprs = envlist[1]
@@ -116,13 +117,24 @@ def annlodesolve(model, tfinal, envlist, tinit = 0.0, reltol=1.0e-7, abstol=1.0e
     nsteps = envlist[8]
     cvode_mem = envlist[9]
 
+    #for parameter changes
+    for i in range(len(params)):
+        data.p[i] = params[i]
+        
+    import code
+    code.interact(local=locals())
+
     cvode.CVodeReInit(cvode_mem, f, 0.0, y, cvode.CV_SS, reltol, abstol)
+
+    #REASSIGN????
+    #cvode.CVodeSetFdata(cvode_mem, ctypes.pointer(data))
 
     tadd = tfinal/nsteps
 
     t = cvode.realtype(tinit)
     tout = tinit + tadd
     
+
     print "Beginning integration, TINIT:", tinit, "TFINAL:", tfinal, "TADD:", tadd, "ODESIZE:", odesize
     for step in range(1, nsteps):
 

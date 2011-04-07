@@ -89,7 +89,7 @@ def annlinit(model, xpfname, reltol=1.0e-7, abstol=1.0e-11, nsteps = 1000):
     yout = numpy.zeros([nsteps, odesize])
 
     #initialize the arrays
-    print "Initial parameter values:", y
+    #print "Initial parameter values:", y
     xout[0] = 0.0 #CHANGE IF NEEDED
     #first step in yout
     for i in range(0, odesize):
@@ -99,7 +99,7 @@ def annlinit(model, xpfname, reltol=1.0e-7, abstol=1.0e-11, nsteps = 1000):
     xpfile = open(xpfname, "r")
     xpdata = read_csv_array(xpfile)
     
-    return [f, rhs_exprs, y, ydot, odesize, data, xout, yout, nsteps, cvode_mem], xpdata
+    return [f, rhs_exprs, y, ydot, odesize, data, xout, yout, nsteps, cvode_mem, yzero], xpdata
 
 
 def annlodesolve(model, tfinal, envlist, params, tinit = 0.0, reltol=1.0e-7, abstol=1.0e-11):
@@ -116,25 +116,20 @@ def annlodesolve(model, tfinal, envlist, params, tinit = 0.0, reltol=1.0e-7, abs
     yout = envlist[7]
     nsteps = envlist[8]
     cvode_mem = envlist[9]
+    yzero = envlist[10]
 
-    #for parameter changes
+    #reset the initial values for each run. the params list will be passed by scipy.anneal
     for i in range(len(params)):
         data.p[i] = params[i]
-        
-    import code
-    code.interact(local=locals())
-
+    y = cvode.NVector(yzero)
+    # Reinitialize the memory allocations, DOES NOT REALLOCATE
     cvode.CVodeReInit(cvode_mem, f, 0.0, y, cvode.CV_SS, reltol, abstol)
-
-    #REASSIGN????
-    #cvode.CVodeSetFdata(cvode_mem, ctypes.pointer(data))
 
     tadd = tfinal/nsteps
 
     t = cvode.realtype(tinit)
     tout = tinit + tadd
     
-
     print "Beginning integration, TINIT:", tinit, "TFINAL:", tfinal, "TADD:", tadd, "ODESIZE:", odesize
     for step in range(1, nsteps):
 

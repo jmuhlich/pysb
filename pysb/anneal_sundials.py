@@ -186,30 +186,34 @@ def read_csv_array(fp):
     return (darray, headstring)
 
 
-def compare_data(array0, array0axis, array1, array1axis, array0var=None):
+def compare_data(xparray, xparrayaxis, simarray, simarrayaxis, xparrayvar=None):
     """Compares two arrays of different size and returns the X^2 between them.
-    Uses the X axis as the unit to re-grid both arrays
+    Uses the X axis as the unit to re-grid both arrays. 
+    xparray: experimental data
+    xparrayaxis: which axis of xparray to use for simulation
+    simarray: simulation data
+    simarrayaxis: which axis of simarray to use for simulation
     """
     # figure out the array shapes
     # this expects arrays of the form array([time, measurements])
     # the time is assumed to be roughly the same for both and the 
     # shortest time will be taken as reference to regrid the data
     # the regridding is done using a b-spline interpolation
-    # array0var shuold be the variances at every time point
+    # xparrayvar shuold be the variances at every time point
     #
 
     # sanity checks
     # make sure we are comparing the right shape arrays
-    arr0shape = array0.shape
-    arr1shape = array1.shape
+    #arr0shape = xparray.shape
+    #arr1shape = simarray.shape
     
-    if len(arr0shape) != len(arr1shape):
-        raise SystemExit("comparing arrays of different dimensions")
+    #if len(arr0shape) != len(arr1shape):
+    #    raise SystemExit("comparing arrays of different dimensions")
     
     # get the time range where the arrays overlap
-    rngmin = max(array0[0].min(), array1[0].min())
-    rngmax = min(array0[0].max(), array1[0].max())
-    print "RNGMIN, RNGMAX", rngmin, rngmax
+    rngmin = max(xparray[0].min(), simarray[0].min())
+    rngmax = min(xparray[0].max(), simarray[0].max())
+    print "COMPARING DOMAIN:", rngmin,"to", rngmax
     rngmin = round(rngmin, -1)
     rngmax = round(rngmax, -1)
     
@@ -217,28 +221,28 @@ def compare_data(array0, array0axis, array1, array1axis, array0var=None):
     # the new gridset for the model array. notice the time range
     # of the experiment has to be within the model range
     #
-    iparray = numpy.zeros(array0.shape)
-    iparray[0] =  array0[0]
+    iparray = numpy.zeros((2, xparray.shape[1]))
+    iparray[0] =  xparray[0] #this assumes the xp array is the smaller, reference array
     
     # now create a b-spline of the data and fit it to desired range
-    tck = scipy.interpolate.splrep(array1[0], array1[1])
-    iparray[1] = scipy.interpolate.splev(iparray[0], tck)
+    tck = scipy.interpolate.splrep(simarray[0], simarray[simarrayaxis])
+    iparray[1] = scipy.interpolate.splev(xparray[0], tck) #xp x-coordinate values to extract from y splines
     
     # we now have x and y axis for the points in the model array
     # calculate the objective function
     
-    diffarray = array0[1] - iparray[1]
+    diffarray = xparray[xparrayaxis] - iparray[1]
     diffsqarray = diffarray * diffarray
     
     # assume a default .05 variance
-    if array0var is None:
-        array0var = numpy.ones(iparray[1].shape)
-        array0var = array0var*.05
+    if xparrayvar is None:
+        xparrayvar = numpy.ones(iparray[1].shape)
+        xparrayvar = xparrayvar*.05
     
-    array0var = numpy.multiply(array0var,array0var)
-    array0var = array0var*0.5
+    xparrayvar = numpy.multiply(xparrayvar,xparrayvar)
+    xparrayvar = xparrayvar*0.5
 
-    objarray = diffsqarray * array0var
-    
+    objarray = diffsqarray * xparrayvar
+
     return objarray.sum()
     

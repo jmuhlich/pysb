@@ -194,55 +194,61 @@ def compare_data(xparray, xparrayaxis, simarray, simarrayaxis, xparrayvar=None):
     simarray: simulation data
     simarrayaxis: which axis of simarray to use for simulation
     """
-    # figure out the array shapes
-    # this expects arrays of the form array([time, measurements])
+    # this expects arrays of the form array([time, measurement1, measurement2, ...])
     # the time is assumed to be roughly the same for both and the 
     # shortest time will be taken as reference to regrid the data
     # the regridding is done using a b-spline interpolation
     # xparrayvar shuold be the variances at every time point
     #
 
-    # sanity checks
-    # make sure we are comparing the right shape arrays
-    #arr0shape = xparray.shape
-    #arr1shape = simarray.shape
-    
-    #if len(arr0shape) != len(arr1shape):
-    #    raise SystemExit("comparing arrays of different dimensions")
-    
-    # get the time range where the arrays overlap
-    rngmin = max(xparray[0].min(), simarray[0].min())
-    rngmax = min(xparray[0].max(), simarray[0].max())
-    print "COMPARING DOMAIN:", rngmin,"to", rngmax
-    rngmin = round(rngmin, -1)
-    rngmax = round(rngmax, -1)
-    
-    # use the experimental gridpoints from the reference array as
-    # the new gridset for the model array. notice the time range
-    # of the experiment has to be within the model range
+
+    # FIXME FIXME FIXME FIXME
+    # This prob should figure out the overlap of the two arrays and 
+    # get a spline of the overlap. For now just assume the simarray domain
+    # is bigger than the xparray. FIXME FIXME FIXME
     #
-    iparray = numpy.zeros((2, xparray.shape[1]))
-    iparray[0] =  xparray[0] #this assumes the xp array is the smaller, reference array
+    #rngmin = max(xparray[0].min(), simarray[0].min())
+    #rngmax = min(xparray[0].max(), simarray[0].max())
+    #rngmin = round(rngmin, -1)
+    #rngmax = round(rngmax, -1)
+    #print "Time overlap range:", rngmin,"to", rngmax
     
-    # now create a b-spline of the data and fit it to desired range
+    
+    ipsimarray = numpy.zeros(xparray.shape[1])
+        
+    # create a b-spline of the sim data and fit it to desired range
     tck = scipy.interpolate.splrep(simarray[0], simarray[simarrayaxis])
-    iparray[1] = scipy.interpolate.splev(xparray[0], tck) #xp x-coordinate values to extract from y splines
+    ipsimarray = scipy.interpolate.splev(xparray[0], tck) #xp x-coordinate values to extract from y splines
     
     # we now have x and y axis for the points in the model array
     # calculate the objective function
+    #                  1
+    # obj(parms) = ---------(S_sim(t,parms)-S_exp)^2
+    #              2*sigma^2
     
-    diffarray = xparray[xparrayaxis] - iparray[1]
+    diffarray = ipsimarray - xparray[xparrayaxis]
     diffsqarray = diffarray * diffarray
     
     # assume a default .05 variance
     if xparrayvar is None:
-        xparrayvar = numpy.ones(iparray[1].shape)
-        xparrayvar = xparrayvar*.05
-    
+        xparrayvar = numpy.ones(xparray.shape[1])
+        xparrayvar = xparrayvar*.05 #5%
+
     xparrayvar = numpy.multiply(xparrayvar,xparrayvar)
-    xparrayvar = xparrayvar*0.5
+    xparrayvar = xparrayvar*2.0
 
-    objarray = diffsqarray * xparrayvar
-
-    return objarray.sum()
+    objarray = diffsqarray / xparrayvar
     
+    return objarray.sum()
+
+def annealfxn(paramlist, ):
+    model =
+    time =
+    envlist = 
+    xpdata =
+    xpaxis = 
+    simaxis = 
+    
+    outlist = annlodesolve(model, time, envlist, paramlist)
+    objout = compare_data(xpdata, xpaxis, outlist[0], simaxis)
+    return objout

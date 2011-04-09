@@ -10,7 +10,7 @@ from pysundials import cvode
 # These set of functions set up the system for annealing runs
 # and provide the runner function as input to annealing
 
-def annlinit(model, xpfname, reltol=1.0e-7, abstol=1.0e-11, nsteps = 1000):
+def annlinit(model, reltol=1.0e-7, abstol=1.0e-11, nsteps = 1000, itermaxstep = None):
     '''
     must be run to set up the environment for annealing with pysundials
     '''
@@ -26,12 +26,12 @@ def annlinit(model, xpfname, reltol=1.0e-7, abstol=1.0e-11, nsteps = 1000):
     # assign the initial conditions
     # FIXME: code outside of model shouldn't handle parameter_overrides 
     # FIXME: Species really should be a class with methods such as .name, .index, etc...
-    for cplxptrn, ic_parm in model.initial_conditions:
-        override = model.parameter_overrides.get(ic_parm.name)
+    for cplxptrn, ic_param in model.initial_conditions:
+        override = model.parameter_overrides.get(ic_param.name)
         if override is not None:
-            ic_parm = override
+            ic_param = override
         speci = model.get_species_index(cplxptrn)
-        yzero[speci] = ic_parm.value
+        yzero[speci] = ic_param.value
 
     # initialize y with the yzero values
     y = cvode.NVector(yzero)
@@ -60,9 +60,13 @@ def annlinit(model, xpfname, reltol=1.0e-7, abstol=1.0e-11, nsteps = 1000):
     PUserData = ctypes.POINTER(UserData)
     data = UserData() 
 
+    #paramlist for annealing feeder function
+    paramlist = []
     for i in range(0, numparams):
         # notice: p[i] ~ model.parameters[i].name ~ model.parameters[i].value
         data.p[i] = model.parameters[i].value
+        paramlist.append(model.parameters[i].value)
+    paramarray = numpy.asarray(paramlist)
 
     # if no sensitivity analysis is needed allocate the "p" array as a 
     # pointer array that can be called by sundials "f" as needed
@@ -83,6 +87,9 @@ def annlinit(model, xpfname, reltol=1.0e-7, abstol=1.0e-11, nsteps = 1000):
     cvode.CVodeSetFdata(cvode_mem, ctypes.pointer(data))
     # link integrator with linear solver
     cvode.CVDense(cvode_mem, odesize)
+    #stepsize
+    if itermaxstep != None:
+        cvode.CVodeSetMaxStep(cvode_mem, itermaxstep)
 
     #list of outputs
     xout = numpy.zeros(nsteps)
@@ -94,12 +101,8 @@ def annlinit(model, xpfname, reltol=1.0e-7, abstol=1.0e-11, nsteps = 1000):
     #first step in yout
     for i in range(0, odesize):
         yout[0][i] = y[i]
-
-    #get the experimental data needed for annealing
-    xpfile = open(xpfname, "r")
-    xpdata = read_csv_array(xpfile)
     
-    return [f, rhs_exprs, y, ydot, odesize, data, xout, yout, nsteps, cvode_mem, yzero], xpdata
+    return [f, rhs_exprs, y, ydot, odesize, data, xout, yout, nsteps, cvode_mem, yzero], paramarray
 
 
 def annlodesolve(model, tfinal, envlist, params, tinit = 0.0, reltol=1.0e-7, abstol=1.0e-11):
@@ -124,13 +127,18 @@ def annlodesolve(model, tfinal, envlist, params, tinit = 0.0, reltol=1.0e-7, abs
     y = cvode.NVector(yzero)
     # Reinitialize the memory allocations, DOES NOT REALLOCATE
     cvode.CVodeReInit(cvode_mem, f, 0.0, y, cvode.CV_SS, reltol, abstol)
-
+    
     tadd = tfinal/nsteps
 
     t = cvode.realtype(tinit)
     tout = tinit + tadd
     
-    print "Beginning integration, TINIT:", tinit, "TFINAL:", tfinal, "TADD:", tadd, "ODESIZE:", odesize
+    print "Beginning integration"
+    print "TINIT:", tinit, "TFINAL:", tfinal, "TADD:", tadd, "ODESIZE:", odesize
+    print "Parameters:", params
+    #print "y0:", yzero
+    
+
     for step in range(1, nsteps):
 
         ret = cvode.CVode(cvode_mem, tout, y, ctypes.byref(t), cvode.CV_NORMAL)
@@ -164,8 +172,13 @@ def annlodesolve(model, tfinal, envlist, params, tinit = 0.0, reltol=1.0e-7, abs
 
     return (xyobs,xout,yout, yobs)
 
-def read_csv_array(fp):
-    """returns the first string and a numpy array from a csv set of data"""
+def read_csv_array(xpfname):
+    """returns the first string and a numpy array from a csv set of data
+    xpfname is a string with the file name"""
+
+    #get the experimental data needed for annealing
+    fp = open(xpfname, "r")
+
     reader = csv.reader(fp)
     templist = []
     #read in the lists
@@ -200,8 +213,6 @@ def compare_data(xparray, xparrayaxis, simarray, simarrayaxis, xparrayvar=None):
     # the regridding is done using a b-spline interpolation
     # xparrayvar shuold be the variances at every time point
     #
-
-
     # FIXME FIXME FIXME FIXME
     # This prob should figure out the overlap of the two arrays and 
     # get a spline of the overlap. For now just assume the simarray domain
@@ -223,7 +234,7 @@ def compare_data(xparray, xparrayaxis, simarray, simarrayaxis, xparrayvar=None):
     # we now have x and y axis for the points in the model array
     # calculate the objective function
     #                  1
-    # obj(parms) = ---------(S_sim(t,parms)-S_exp)^2
+    # obj(params) = ---------(S_sim(t,params)-S_exp)^2
     #              2*sigma^2
     
     diffarray = ipsimarray - xparray[xparrayaxis]
@@ -241,14 +252,45 @@ def compare_data(xparray, xparrayaxis, simarray, simarrayaxis, xparrayvar=None):
     
     return objarray.sum()
 
-def annealfxn(paramlist, ):
-    model =
-    time =
-    envlist = 
-    xpdata =
-    xpaxis = 
-    simaxis = 
+def getgenparambounds(params, omag=2, N=100.):
+    # from: http://projects.scipy.org/scipy/ticket/1126
+    # The input-parameters "lower" and "upper" do not refer to global bounds of the
+    # parameters space but to 'maximum' displacements in the MC scheme AND
+    # in addition they determine the initial point!! 
+    # The initial value that you provide for the parameter vector seems to have no influence.
+    # This is how I call anneal with my desired functionality
+    # p=[a,b,c] #my initial values
+    # lb=array([a0,b0,c0]) #my lower bounds
+    # ub=array([a1,b1,c1]) #my upper bounds
+    # N=100 #determines the size of displacements
+    # dx=(ub-lb)/N #displacements
+    # lower=array(p)-dx/2 #the "lower bound" of the anneal routine
+    # upper=array(p)+dx/2 #the "upper bound" of the anneal routine
+    # f=lambda var: costfunction(p,lb,ub) #my cost function that is made very high if not lb < p < ub
+    # pbest=scipy.optimize.anneal(f,p,lower=lower,upper=upper)
+    # This ensures a MC search that starts of close to my initial value and makes steps of dx in its search.
+
+    # set upper/lower bounds for generic problem
+    ub = params * pow(10,omag)
+    lb = params / pow(10,omag)
     
-    outlist = annlodesolve(model, time, envlist, paramlist)
-    objout = compare_data(xpdata, xpaxis, outlist[0], simaxis)
+    # get displacements, these are all numpy arrays
+    dx = (ub-lb)/N
+    lower = params - dx/2
+    upper = params + dx/2
+    
+    return lb, ub, lower, upper
+
+
+def annealfxn(params, time, model, envlist, xpdata, xpaxis, simaxis, lb, ub):
+    ''' Feeder function for scipy.optimize.anneal
+    '''
+    if numpy.greater_equal(params, lb).all() and numpy.less_equal(params, ub).all():
+        outlist = annlodesolve(model, time, envlist, params)
+        objout = compare_data(xpdata, xpaxis, outlist[0], simaxis)
+    else:
+        print "NEGATIVE VALUE, SKIPPING"
+        print params
+        objout = 1.0e500
+
     return objout

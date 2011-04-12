@@ -67,7 +67,8 @@ def annlinit(model, reltol=1.0e-7, abstol=1.0e-11, nsteps = 1000, itermaxstep = 
         data.p[i] = model.parameters[i].value
         paramlist.append(model.parameters[i].value)
     paramarray = numpy.asarray(paramlist)
-
+    
+    
     # if no sensitivity analysis is needed allocate the "p" array as a 
     # pointer array that can be called by sundials "f" as needed
     def f(t, y, ydot, f_data):
@@ -105,7 +106,7 @@ def annlinit(model, reltol=1.0e-7, abstol=1.0e-11, nsteps = 1000, itermaxstep = 
     return [f, rhs_exprs, y, ydot, odesize, data, xout, yout, nsteps, cvode_mem, yzero], paramarray
 
 
-def annlodesolve(model, tfinal, envlist, params, tinit = 0.0, reltol=1.0e-7, abstol=1.0e-11):
+def annlodesolve(model, tfinal, envlist, params, useparams=None, tinit = 0.0, reltol=1.0e-7, abstol=1.0e-11):
     '''
     the ODE equation solver taylored to work with the annealing algorithm
     '''
@@ -121,10 +122,19 @@ def annlodesolve(model, tfinal, envlist, params, tinit = 0.0, reltol=1.0e-7, abs
     cvode_mem = envlist[9]
     yzero = envlist[10]
 
-    #reset the initial values for each run. the params list will be passed by scipy.anneal
-    for i in range(len(params)):
-        data.p[i] = params[i]
+    #set the initial values and params in each run
+    #all parameters are used in annealing
+    if useparams is None:
+        for i in range(len(params)):
+            data.p[i] = params[i]
+    else:
+        #only a subset of parameters are used for annealing
+        for i, j in enumerate([x for x, y in enumerate(useparams) if y == 1]):
+            data.p[j] = params[i]
+
+    #reset initial concentrations
     y = cvode.NVector(yzero)
+
     # Reinitialize the memory allocations, DOES NOT REALLOCATE
     cvode.CVodeReInit(cvode_mem, f, 0.0, y, cvode.CV_SS, reltol, abstol)
     
@@ -133,16 +143,14 @@ def annlodesolve(model, tfinal, envlist, params, tinit = 0.0, reltol=1.0e-7, abs
     t = cvode.realtype(tinit)
     tout = tinit + tadd
     
-    print "Beginning integration"
-    print "TINIT:", tinit, "TFINAL:", tfinal, "TADD:", tadd, "ODESIZE:", odesize
-    print "Parameters:", params
+    #print "Beginning integration"
+    #print "TINIT:", tinit, "TFINAL:", tfinal, "TADD:", tadd, "ODESIZE:", odesize
+    print "Integrating Parameters:\n", params
     #print "y0:", yzero
     
 
     for step in range(1, nsteps):
-
         ret = cvode.CVode(cvode_mem, tout, y, ctypes.byref(t), cvode.CV_NORMAL)
-       
         if ret !=0:
             print "CVODE ERROR %i"%(ret)
             break
@@ -153,7 +161,7 @@ def annlodesolve(model, tfinal, envlist, params, tinit = 0.0, reltol=1.0e-7, abs
 
         # increase the time counter
         tout += tadd
-    print "Integration finished"
+    #print "Integration finished"
 
     #now deal with observables
     obs_names = [name for name, rp in model.observable_patterns]
@@ -249,8 +257,9 @@ def compare_data(xparray, xparrayaxis, simarray, simarrayaxis, xparrayvar=None):
     xparrayvar = xparrayvar*2.0
 
     objarray = diffsqarray / xparrayvar
-    
-    return objarray.sum()
+    objout = objarray.sum()
+    print "OBJOUT:", objout
+    return objout
 
 def getgenparambounds(params, omag=2, N=100.):
     # from: http://projects.scipy.org/scipy/ticket/1126
@@ -282,14 +291,21 @@ def getgenparambounds(params, omag=2, N=100.):
     return lb, ub, lower, upper
 
 
-def annealfxn(params, time, model, envlist, xpdata, xpaxis, simaxis, lb, ub):
+def annealfxn(params, time, model, envlist, xpdata, xpaxis, simaxis, lb, ub, useparams = None):
     ''' Feeder function for scipy.optimize.anneal
     '''
+    # sample anneal call:
+    # annlout = scipy.optimize.anneal(pysb.anneal_sundials.annealfxn, params, 
+    #                                 args=(65000, model, envlist, xpdata, 2, 2, lb, ub), 
+    #                                 lower=lower, upper=upper)
+    # lower,upper: arrays from get array function or something similar
+    # lb, ub: lower bound and upper bound for function
+
     if numpy.greater_equal(params, lb).all() and numpy.less_equal(params, ub).all():
-        outlist = annlodesolve(model, time, envlist, params)
+        outlist = annlodesolve(model, time, envlist, params, useparams)
         objout = compare_data(xpdata, xpaxis, outlist[0], simaxis)
     else:
-        print "NEGATIVE VALUE, SKIPPING"
+        print "VALUE OUT OF BOUNDS NOTED"
         print params
         objout = 1.0e500
 

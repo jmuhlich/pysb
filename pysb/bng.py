@@ -7,7 +7,19 @@ import re
 import sympy
 
 # not ideal, but it will work for now during development
-pkg_path = '/usr/local/share/BioNetGen'
+pkg_path = None
+pkg_paths_to_check = [
+    '/usr/local/share/BioNetGen',
+    'c:/Program Files/BioNetGen'
+    ]
+for test_path in pkg_paths_to_check:
+    if os.access(test_path + '/Perl2/BNG2.pl', os.F_OK):
+        pkg_path = test_path
+        break
+if pkg_path is None:
+    msg = "Could not find BioNetGen installed in one of the following locations:\n    " + \
+        '\n    '.join(pkg_paths_to_check)
+    raise Exception(msg)
 
 generate_network_code = """
 begin actions
@@ -16,6 +28,12 @@ end actions
 """
 
 def generate_equations(model):
+    # only need to do this once
+    # TODO track "dirty" state, i.e. "has model been modified?"
+    #   or, use a separate "math model" object to contain ODEs
+    if model.odes:
+        return
+
     gen = BngGenerator(model)
 
     bng_filename = '%d_%d_temp.bngl' % (os.getpid(), random.randint(0, 10000))
@@ -25,18 +43,20 @@ def generate_equations(model):
         bng_file.write(gen.get_content())
         bng_file.write(generate_network_code)
         bng_file.close()
-        subprocess.call(['/usr/bin/perl', pkg_path+'/Perl2/BNG2.pl', bng_filename],
-                        stdout=subprocess.PIPE)
+        p = subprocess.Popen(['perl', pkg_path + '/Perl2/BNG2.pl', bng_filename],
+                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        p.communicate()
+        if p.returncode:
+            raise Exception(p.stdout.read())
         net_file = open(net_filename, 'r')
         lines = iter(net_file.readlines())
         net_file.close()
     except Exception as e:
-        print "problem running BNG:\n"
-        print e
-        print "\n"
+        raise Exception("problem running BNG: " + str(e))
     finally:
-        os.unlink(bng_filename)
-        os.unlink(net_filename)
+        for filename in [bng_filename, net_filename]:
+            if os.access(filename, os.F_OK):
+                os.unlink(filename)
 
     try:
         while 'begin species' not in lines.next():
@@ -87,15 +107,27 @@ def _parse_species(model, line):
     for ms in monomer_strings:
         compartment_name, monomer_name, site_strings = re.match(r'(?:@(\w+)::)?(\w+)\(([^)]*)\)', ms).groups()
         site_conditions = {}
-        for ss in site_strings.split(','):
-            if '!' in ss:
-                site_name, condition = ss.split('!')
-                condition = int(condition)
-            elif '~' in ss:
-                site_name, condition = ss.split('~')
-            else:
-                site_name, condition = ss, None
-            site_conditions[site_name] = condition
+        if len(site_strings):
+            for ss in site_strings.split(','):
+                # FIXME this should probably be done with regular expressions
+                if '!' in ss and '~' in ss:
+                    site_name, condition = ss.split('~')
+                    state, bond = condition.split('!')
+                    if bond == '?':
+                        bond = pysb.WILD
+                    elif bond == '!':
+                        bond = pysb.ANY
+                    else:
+                        bond = int(bond)
+                    condition = (state, bond)
+                elif '!' in ss:
+                    site_name, condition = ss.split('!')
+                    condition = int(condition)
+                elif '~' in ss:
+                    site_name, condition = ss.split('~')
+                else:
+                    site_name, condition = ss, None
+                site_conditions[site_name] = condition
         monomer = model.get_monomer(monomer_name)
         monomer_patterns.append(monomer(site_conditions))
 

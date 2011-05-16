@@ -1,6 +1,9 @@
 import sys
+import os
+import errno
 import warnings
 import logging
+import inspect
 
 logging.basicConfig()
 clogger = logging.getLogger("CoreFile")
@@ -24,33 +27,46 @@ class SelfExporter(object):
     do_self_export = True
     default_model = None
     target_globals = None   # the globals dict to which we'll export our symbols
+    target_module = None    # the module to which we've exported
 
     def __init__(self, name, __export=True):
         self.name = name
 
         if SelfExporter.do_self_export and __export: #isn't __export always True by the time we get here?
-            # FIXME if name already used, add_component will succeed since it's done first.
-            #   this whole thing needs to be rethought, really.
+
+            # determine the module from which we were called
+            cur_module = inspect.getmodule(inspect.currentframe())
+            caller_frame = inspect.currentframe()
+            # walk up through the stack until we hit a different module
+            stacklevel = 1
+            while inspect.getmodule(caller_frame) == cur_module:
+                stacklevel += 1
+                caller_frame = caller_frame.f_back
+
             if isinstance(self, Model):
                 if SelfExporter.default_model is not None:
-                    raise Exception("Only one instance of Model may be declared ('%s' previously declared)" % SelfExporter.default_model.name)
-                # determine the module from which the Model constructor was called
-                import inspect
-                cur_module = inspect.getmodule(inspect.currentframe())
-                caller_frame = inspect.currentframe()
-                # iterate up through the stack until we hit a different module
-                while inspect.getmodule(caller_frame) == cur_module:
-                    caller_frame = caller_frame.f_back
+                    warnings.warn("Redefining model! (You can probably ignore this if you are running"
+                                  " code interactively)", ModelExistsWarning, stacklevel);
+                    # delete previously exported symbols to prevent extra SymbolExistsWarnings
+                    for name in [c.name for c in SelfExporter.default_model.all_components()] + ['model']:
+                        if name in SelfExporter.target_globals:
+                            del SelfExporter.target_globals[name]
+                SelfExporter.target_module = inspect.getmodule(caller_frame)
                 SelfExporter.target_globals = caller_frame.f_globals
                 SelfExporter.default_model = self
+                # assign model's name from the module it lives in.  slightly sneaky.
+                if self.name is None:
+                    self.name = SelfExporter.target_module.__name__
             elif isinstance(self, (Monomer, Compartment, Parameter, Rule)):
                 if SelfExporter.default_model == None:
                     raise Exception("A Model must be declared before declaring any model components")
                 SelfExporter.default_model.add_component(self)
 
             # load self into target namespace under self.name
+            # FIXME if name already used, add_component will succeed since it's done first.
+            #   this whole thing needs to be rethought, really.
             if SelfExporter.target_globals.has_key(name):
-                warnings.warn("'%s' already defined" % (name))
+                warnings.warn("'%s' already defined" % (name), SymbolExistsWarning, stacklevel)
             SelfExporter.target_globals[name] = self
 
 
@@ -72,6 +88,24 @@ class Model(SelfExporter):
         self.observable_groups = {}  # values are tuples of factor,speciesnumber
         self.initial_conditions = []
 
+    def reload(self):
+        # forcibly removes the .pyc file and reloads the model module
+        model_pyc = SelfExporter.target_module.__file__
+        if model_pyc[-3:] == '.py':
+            model_pyc += 'c'
+        try:
+            os.unlink(model_pyc)
+        except OSError as e:
+            # ignore "no such file" errors, re-raise the rest
+            if e.errno != errno.ENOENT:
+                raise
+        reload(SelfExporter.target_module)
+        # return self for "model = model.reload()" idiom, until a better solution can be found
+        return SelfExporter.default_model
+
+    def all_components(self):
+        return self.monomers + self.compartments + self.parameters + self.rules
+
     def add_component(self, other):
         if isinstance(other, Monomer):
             self.monomers.append(other)
@@ -79,6 +113,7 @@ class Model(SelfExporter):
             self.compartments.append(other)
         elif isinstance(other, Parameter):
             self.parameters.append(other)
+            self.parameters.sort(key=lambda p: p.name)  # keep param list sorted
         elif isinstance(other, Rule):
             self.rules.append(other)
         else:
@@ -504,12 +539,15 @@ class Compartment(SelfExporter):
     """
     clogger.debug('in Compartment')
    
-    def __init__(self, name, parent=None, dimension=3, size=1, __export=True):
+    def __init__(self, name, parent=None, dimension=3, size=None, __export=True):
         SelfExporter.__init__(self, name, __export)
 
         if parent != None and isinstance(parent, Compartment) == False:
             raise Exception("parent must be a predefined Compartment or None")
         #FIXME: check for only ONE "None" parent? i.e. only one compartment can have a parent None?
+
+        if size is not None and not isinstance(size, Parameter):
+            raise Exception("size must be a parameter (or omitted)")
 
         self.parent = parent
         self.dimension = dimension
@@ -572,7 +610,18 @@ class InvalidComplexPatternException(Exception):
 class InvalidReactionPatternException(Exception):
     pass
 
+class ModelExistsWarning(UserWarning):
+    """Issued by Model constructor when a second model is defined."""
+    pass
+
+class SymbolExistsWarning(UserWarning):
+    """Issued by model component constructors when a name is reused."""
+    pass
+
 
 
 ANY = MonomerAny()
 WILD = MonomerWild()
+
+warnings.simplefilter('always', ModelExistsWarning)
+warnings.simplefilter('always', SymbolExistsWarning)

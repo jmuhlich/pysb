@@ -5,3 +5,6 @@
 # r<0: double well potential, where x=0 is the local maximum (the
 #      barrier between the wells) 
 #      the well locations are at + or - sqrt(|r|/u)
+
+def landaufunc(x,):
+    

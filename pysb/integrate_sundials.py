@@ -140,10 +140,10 @@ def odesolve(model, tfinal, nsteps = 100, tinit = 0.0, reltol=1.0e-7, abstol=1.0
     #sum up the correct entities
     for i, name in enumerate(obs_names):
         factors, species = zip(*model.observable_groups[name])
-        yobs[0] = (yout[:, species] * factors).sum(1)
+        yobs[i] = (yout[:, species] * factors).sum(1)
 
     #transpose yobs to make it easy to plot
-    yobs.T
+    yout = yout.T
     return (xout,yobs,yout)
 
 def odesenssolve(model, tfinal, nsteps = 100, tinit = 0.0, senslist=None,

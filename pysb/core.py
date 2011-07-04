@@ -23,6 +23,7 @@ def MatchOnce(pattern):
 
 
 # FIXME: make this behavior toggleable
+# FIXME: add more useful error messages
 class SelfExporter(object):
     """Expects a constructor paramter 'name', under which this object is
     inserted into the namespace from which the Model constructor was called."""

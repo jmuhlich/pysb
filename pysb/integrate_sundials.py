@@ -152,7 +152,7 @@ def odesenssolve(model, tfinal, nsteps = 100, tinit = 0.0, senslist=None,
 
     SOMEFLAG = True
     if SOMEFLAG:
-        f, rhs_exprs, y, ydot, odesize, data = odeinit(model, senslist)
+        f, rhs_exprs, y, ydot, odesize, data = odeinit(model)
 
     # initialize the cvode memory object
     cvodes_mem = cvodes.CVodeCreate(cvodes.CV_BDF, cvodes.CV_NEWTON)

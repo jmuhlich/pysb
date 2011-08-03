@@ -109,6 +109,13 @@ def annlinit(model, reltol=1.0e-7, abstol=1.0e-11, nsteps = 1000, itermaxstep = 
 def annlodesolve(model, tfinal, envlist, params, useparams=None, tinit = 0.0, reltol=1.0e-7, abstol=1.0e-11):
     '''
     the ODE equation solver taylored to work with the annealing algorithm
+    model: the model object
+    envlist: the list returned from annlinit
+    params: the list of parameters that are being optimized with annealing 
+    useparams: the parameter number to which params[i] corresponds
+    tinit: initial time
+    reltol: relative tolerance
+    abstol: absolute tolerance
     '''
     f = envlist[0]
     rhs_exprs = envlist[1]
@@ -129,8 +136,11 @@ def annlodesolve(model, tfinal, envlist, params, useparams=None, tinit = 0.0, re
             data.p[i] = params[i]
     else:
         #only a subset of parameters are used for annealing
-        for i, j in enumerate([x for x, y in enumerate(useparams) if y == 1]):
-            data.p[j] = params[i]
+        for i in range(len(useparams)):
+            data.p[useparams[i]] = params[i]
+        #for i, j in enumerate([x for x, y in enumerate(useparams) if y == 1]):
+        #    data.p[j] = params[i]
+
 
     #reset initial concentrations
     y = cvode.NVector(yzero)
@@ -147,7 +157,6 @@ def annlodesolve(model, tfinal, envlist, params, useparams=None, tinit = 0.0, re
     #print "TINIT:", tinit, "TFINAL:", tfinal, "TADD:", tadd, "ODESIZE:", odesize
     print "Integrating Parameters:\n", params
     #print "y0:", yzero
-    
 
     for step in range(1, nsteps):
         ret = cvode.CVode(cvode_mem, tout, y, ctypes.byref(t), cvode.CV_NORMAL)
@@ -236,14 +245,16 @@ def compare_data(xparray, xparrayaxis, simarray, simarrayaxis, xparrayvar=None):
     ipsimarray = numpy.zeros(xparray.shape[1])
         
     # create a b-spline of the sim data and fit it to desired range
+    # import code
+    # code.interact(local=locals())
     tck = scipy.interpolate.splrep(simarray[0], simarray[simarrayaxis])
     ipsimarray = scipy.interpolate.splev(xparray[0], tck) #xp x-coordinate values to extract from y splines
     
     # we now have x and y axis for the points in the model array
     # calculate the objective function
-    #                  1
-    # obj(params) = ---------(S_sim(t,params)-S_exp)^2
-    #              2*sigma^2
+    #                        1
+    # obj(t, params) = -------------(S_sim(t,params)-S_exp(t))^2
+    #                  2*sigma_exp^2
     
     diffarray = ipsimarray - xparray[xparrayaxis]
     diffsqarray = diffarray * diffarray
@@ -251,17 +262,25 @@ def compare_data(xparray, xparrayaxis, simarray, simarrayaxis, xparrayvar=None):
     # assume a default .05 variance
     if xparrayvar is None:
         xparrayvar = numpy.ones(xparray.shape[1])
-        xparrayvar = xparrayvar*.05 #5%
+        xparrayvar = xparray[xparrayaxis]*.05 # 5% variance w the experimental data
+        xparrayvar = xparrayvar * xparrayvar
 
-    xparrayvar = numpy.multiply(xparrayvar,xparrayvar)
     xparrayvar = xparrayvar*2.0
 
     objarray = diffsqarray / xparrayvar
+    #check for inf in objarray, they creep up when there are near zero or zero values in xparrayvar
+    for i in range(len(objarray)):
+        if numpy.isinf(objarray[i]) or numpy.isnan(objarray[i]):
+            #print "CORRECTING NAN OR INF. ORIGINAL ARRAY"
+            #print objarray
+            objarray[i] = 1e-20 #zero enough
+
     objout = objarray.sum()
     print "OBJOUT:", objout
     return objout
 
 def getgenparambounds(params, omag=2, N=100.):
+    # params must be a numpy array
     # from: http://projects.scipy.org/scipy/ticket/1126
     # The input-parameters "lower" and "upper" do not refer to global bounds of the
     # parameters space but to 'maximum' displacements in the MC scheme AND
@@ -283,30 +302,37 @@ def getgenparambounds(params, omag=2, N=100.):
     ub = params * pow(10,omag)
     lb = params / pow(10,omag)
     
-    # get displacements, these are all numpy arrays
+    # maximum displacements of the anneal routine
     dx = (ub-lb)/N
-    lower = params - dx/2
-    upper = params + dx/2
+    lower = params - dx #/2
+    upper = params + dx #/2
     
     return lb, ub, lower, upper
 
 
-def annealfxn(params, time, model, envlist, xpdata, xpaxis, simaxis, lb, ub, useparams = None):
+def annealfxn(params, useparams, time, model, envlist, xpdata, xpaxis, simaxis, lb, ub):
     ''' Feeder function for scipy.optimize.anneal
     '''
-    # sample anneal call:
+    # sample anneal call full model:
     # annlout = scipy.optimize.anneal(pysb.anneal_sundials.annealfxn, params, 
     #                                 args=(65000, model, envlist, xpdata, 2, 2, lb, ub), 
     #                                 lower=lower, upper=upper)
-    # lower,upper: arrays from get array function or something similar
-    # lb, ub: lower bound and upper bound for function
+    # params: parameters to be optimized
+    # lower,upper: arrays from get array function or something similar from getgenparambounds
+    # lb, ub: lower bound and upper bound for function from getgenparambounds
+    #
+    # sample anneal call, optimization of some parameters
+    # annlout = scipy.optimize.anneal(pysb.anneal_sundials.annealfxn, annparams, 
+    #                                args=(65000, model, envlist, xpdata, 2, 2, lb, ub),
+    #                                lower=lower, upper=upper)
+    #
 
     if numpy.greater_equal(params, lb).all() and numpy.less_equal(params, ub).all():
         outlist = annlodesolve(model, time, envlist, params, useparams)
         objout = compare_data(xpdata, xpaxis, outlist[0], simaxis)
     else:
-        print "VALUE OUT OF BOUNDS NOTED"
+        print "======>VALUE OUT OF BOUNDS NOTED"
         print params
-        objout = 1.0e500
-
+        print "======>"
+        objout = 1.0e300 # the largest FP in python is 1.0e308, otherwise it is just Inf
     return objout

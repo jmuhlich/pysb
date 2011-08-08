@@ -137,6 +137,7 @@ def annlodesolve(model, tfinal, envlist, params, useparams=None, tinit = 0.0, re
     else:
         #only a subset of parameters are used for annealing
         for i in range(len(useparams)):
+            #print "changing parameter", model.parameters[useparams[i]],"data.p", data.p[useparams[i]],"to", params[i]
             data.p[useparams[i]] = params[i]
         #for i, j in enumerate([x for x, y in enumerate(useparams) if y == 1]):
         #    data.p[j] = params[i]
@@ -332,7 +333,8 @@ def annealfxn(params, useparams, time, model, envlist, xpdata, xpaxis, simaxis, 
         objout = compare_data(xpdata, xpaxis, outlist[0], simaxis)
     else:
         print "======>VALUE OUT OF BOUNDS NOTED"
-        print params
-        print "======>"
+        temp = numpy.where((numpy.logical_and(numpy.greater_equal(params, lb), numpy.less_equal(params, ub)) * 1) == 0)
+        for i in temp:
+            print "======>",i, params[i]
         objout = 1.0e300 # the largest FP in python is 1.0e308, otherwise it is just Inf
     return objout

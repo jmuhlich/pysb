@@ -140,6 +140,9 @@ def _parse_species(model, line):
 
 
 def _parse_group(model, line):
+    #FIXME: when BNG does not recognize a group leaves a blank
+    # in the combination section of the number,name,combination assignment
+    # this should be handled correctly. 
     (number, name, combination) = line.strip().split()
     group = []
     # combination is a comma separated list of [factor*]speciesnumber

@@ -338,3 +338,8 @@ def annealfxn(params, useparams, time, model, envlist, xpdata, xpaxis, simaxis, 
             print "======>",i, params[i]
         objout = 1.0e300 # the largest FP in python is 1.0e308, otherwise it is just Inf
     return objout
+
+def annealfxnmulti(params, useparams, time, model, envlist, xpdata, [xpaxislist], [simaxislist], lb, ub):
+    ''' Feeder function for scipy.optimize.anneal with fitting of multiple data 
+    '''
+    pass

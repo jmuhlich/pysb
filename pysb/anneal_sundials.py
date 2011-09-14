@@ -364,6 +364,7 @@ def annealfxn(params, useparams, time, model, envlist, xpdata, xspairlist, lb, u
             outlistnorm =(outlist[0].T/normfact).T
             # xpdata[0] should be time, skip
             outlistnorm[0] = outlist[0][0].copy()
+            # xpdata here is normalized, and so is outlistnorm
             objout = compare_data(xpdata, outlistnorm, xspairlist)
         else:
             objout = compare_data(xpdata, outlist[0], xspairlist)

@@ -216,69 +216,6 @@ def read_csv_array(xpfname):
     darray = darray.T
     return (darray, headstring)
 
-
-# def compare_data(xparray, xparrayaxis, simarray, simarrayaxis, xparrayvar=None):
-#     """Compares two arrays of different size and returns the X^2 between them.
-#     Uses the X axis as the unit to re-grid both arrays. 
-#     xparray: experimental data
-#     xparrayaxis: which axis of xparray to use for simulation
-#     simarray: simulation data
-#     simarrayaxis: which axis of simarray to use for simulation
-#     """
-#     # this expects arrays of the form array([time, measurement1, measurement2, ...])
-#     # the time is assumed to be roughly the same for both and the 
-#     # shortest time will be taken as reference to regrid the data
-#     # the regridding is done using a b-spline interpolation
-#     # xparrayvar shuold be the variances at every time point
-#     #
-#     # FIXME FIXME FIXME FIXME
-#     # This prob should figure out the overlap of the two arrays and 
-#     # get a spline of the overlap. For now just assume the simarray domain
-#     # is bigger than the xparray. FIXME FIXME FIXME
-#     #
-#     #rngmin = max(xparray[0].min(), simarray[0].min())
-#     #rngmax = min(xparray[0].max(), simarray[0].max())
-#     #rngmin = round(rngmin, -1)
-#     #rngmax = round(rngmax, -1)
-#     #print "Time overlap range:", rngmin,"to", rngmax
-# 
-#     ipsimarray = numpy.zeros(xparray.shape[1])
-#        
-#     # create a b-spline of the sim data and fit it to desired range
-#     # import code
-#     # code.interact(local=locals())
-#     tck = scipy.interpolate.splrep(simarray[0], simarray[simarrayaxis])
-#     ipsimarray = scipy.interpolate.splev(xparray[0], tck) #xp x-coordinate values to extract from y splines
-#    
-#     # we now have x and y axis for the points in the model array
-#     # calculate the objective function
-#     #                        1
-#     # obj(t, params) = -------------(S_sim(t,params)-S_exp(t))^2
-#     #                  2*sigma_exp^2
-#    
-#     diffarray = ipsimarray - xparray[xparrayaxis]
-#     diffsqarray = diffarray * diffarray
-#    
-#     # assume a default .05 variance
-#     if xparrayvar is None:
-#         xparrayvar = numpy.ones(xparray.shape[1])
-#         xparrayvar = xparray[xparrayaxis]*.05 # 5% variance w the experimental data
-#         xparrayvar = xparrayvar * xparrayvar
-#
-#     xparrayvar = xparrayvar*2.0
-#
-#     objarray = diffsqarray / xparrayvar
-#     #check for inf in objarray, they creep up when there are near zero or zero values in xparrayvar
-#     for i in range(len(objarray)):
-#         if numpy.isinf(objarray[i]) or numpy.isnan(objarray[i]):
-#             #print "CORRECTING NAN OR INF. ORIGINAL ARRAY"
-#             #print objarray
-#             objarray[i] = 1e-20 #zero enough
-#
-#     objout = objarray.sum()
-#     print "OBJOUT:", objout
-#     return objout
-
 def compare_data(xparray, simarray, xspairlist, xparrayvar=None):
     """Compares two arrays of different size and returns the X^2 between them.
     Uses the X axis as the unit to re-grid both arrays. 
@@ -362,7 +299,7 @@ def compare_data(xparray, simarray, xspairlist, xparrayvar=None):
     print "OBJOUT(total):", objout
     return objout
 
-def getgenparambounds(params, omag=2, N=100.):
+def getgenparambounds(params, omag=3, N=1000., xptonorm=None):
     # params must be a numpy array
     # from: http://projects.scipy.org/scipy/ticket/1126
     # The input-parameters "lower" and "upper" do not refer to global bounds of the
@@ -390,10 +327,18 @@ def getgenparambounds(params, omag=2, N=100.):
     lower = params - dx #/2
     upper = params + dx #/2
     
-    return lb, ub, lower, upper
+    if xptonorm.any():
+        # xptonorm should be the array of xpdata
+        normfact = numpy.max(xptonorm, axis=1)
+        xpnorm = (xptonorm.T/normfact).T
+        # leave time axis alone
+        xpnorm[0] = xptonorm[0].copy()
+        return lb, ub, lower, upper, xpnorm, normfact
+    else:
+        return lb, ub, lower, upper
 
 
-def annealfxn(params, useparams, time, model, envlist, xpdata, xspairlist, lb, ub):
+def annealfxn(params, useparams, time, model, envlist, xpdata, xspairlist, lb, ub, normfact=False):
     ''' Feeder function for scipy.optimize.anneal
     '''
     # sample anneal call full model:
@@ -414,7 +359,14 @@ def annealfxn(params, useparams, time, model, envlist, xpdata, xspairlist, lb, u
 
     if numpy.greater_equal(params, lb).all() and numpy.less_equal(params, ub).all():
         outlist = annlodesolve(model, time, envlist, params, useparams)
-        objout = compare_data(xpdata, outlist[0], xspairlist)
+        # specify if xpdata is normalized by passing normalization factors for each array 
+        if normfact.any():
+            outlistnorm =(outlist[0].T/normfact).T
+            # xpdata[0] should be time, skip
+            outlistnorm[0] = outlist[0][0].copy()
+            objout = compare_data(xpdata, outlistnorm, xspairlist)
+        else:
+            objout = compare_data(xpdata, outlist[0], xspairlist)
     else:
         print "======>VALUE OUT OF BOUNDS NOTED"
         temp = numpy.where((numpy.logical_and(numpy.greater_equal(params, lb), numpy.less_equal(params, ub)) * 1) == 0)

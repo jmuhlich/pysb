@@ -279,7 +279,7 @@ def read_csv_array(xpfname):
 #     print "OBJOUT:", objout
 #     return objout
 
-def compare_data(xparray, simarray, xpsimaxislist, xparrayvar=None):
+def compare_data(xparray, simarray, xspairlist, xparrayvar=None):
     """Compares two arrays of different size and returns the X^2 between them.
     Uses the X axis as the unit to re-grid both arrays. 
     xparray: experimental data
@@ -305,11 +305,23 @@ def compare_data(xparray, simarray, xpsimaxislist, xparrayvar=None):
     #print "Time overlap range:", rngmin,"to", rngmax
     
     ipsimarray = numpy.zeros(xparray.shape[1])
-    
-    for i in range(len(xpsimaxislist)):
+    objout = 0
+   
+    for i in range(len(xspairlist)):
         # create a b-spline of the sim data and fit it to desired range
         # import code
         # code.interact(local=locals())
+        
+        #some error checking
+        #print "xspairlist length:", len(xspairlist[i])
+        #print "xspairlist element type:", type(xspairlist[i])
+        #print "xspairlist[i] elements:", xspairlist[i][0], xspairlist[i][1]
+        assert type(xspairlist[i]) is tuple
+        assert len(xspairlist[i]) == 2
+        
+        xparrayaxis = xspairlist[i][0]
+        simarrayaxis = xspairlist[i][1]
+        
         tck = scipy.interpolate.splrep(simarray[0], simarray[simarrayaxis])
         ipsimarray = scipy.interpolate.splev(xparray[0], tck) #xp x-coordinate values to extract from y splines
         
@@ -329,19 +341,25 @@ def compare_data(xparray, simarray, xpsimaxislist, xparrayvar=None):
             xparrayvar = xparrayvar * xparrayvar
 
         xparrayvar = xparrayvar*2.0
+
+        #remove zeros from xparrayvar that are from experiment
+        for i in range(len(xparrayvar)):
+            if xparrayvar[i] == 0:
+                xparrayvar[i] += 1e-300 #add a tiny amount so that it is effectively not zero
         
         objarray = diffsqarray / xparrayvar
         
         # check for inf in objarray, they creep up when there are near zero or zero values in xparrayvar
         for i in range(len(objarray)):
             if numpy.isinf(objarray[i]) or numpy.isnan(objarray[i]):
-                print "CORRECTING NAN OR INF. IN ARRAY"
+                #print "CORRECTING NAN OR INF. IN ARRAY"
                 # print objarray
                 objarray[i] = 1e-20 #zero enough
 
         objout += objarray.sum()
+        print "OBJOUT(%d,%d):%f  OBJOUT(CUM):%f"%(xparrayaxis, simarrayaxis, objarray.sum(), objout)
 
-    print "OBJOUT:", objout
+    print "OBJOUT(total):", objout
     return objout
 
 def getgenparambounds(params, omag=2, N=100.):
@@ -375,7 +393,7 @@ def getgenparambounds(params, omag=2, N=100.):
     return lb, ub, lower, upper
 
 
-def annealfxn(params, useparams, time, model, envlist, xpdata, xpsimaxislist, lb, ub):
+def annealfxn(params, useparams, time, model, envlist, xpdata, xspairlist, lb, ub):
     ''' Feeder function for scipy.optimize.anneal
     '''
     # sample anneal call full model:
@@ -390,10 +408,13 @@ def annealfxn(params, useparams, time, model, envlist, xpdata, xpsimaxislist, lb
     #   annlout = scipy.optimize.anneal(pysb.anneal_sundials.annealfxn, smacprm, args=(smacnum, 25000, model, envlist, xpdata,
     #            [(2,2), (3,3)], lower=lower, upper=upper, full_output=1)
     #
+    # sample anneal call, optimization for ALL parameters
+    # 
+    #
 
     if numpy.greater_equal(params, lb).all() and numpy.less_equal(params, ub).all():
         outlist = annlodesolve(model, time, envlist, params, useparams)
-        objout = compare_data(xpdata, outlist[0], xpsimaxislist)
+        objout = compare_data(xpdata, outlist[0], xspairlist)
     else:
         print "======>VALUE OUT OF BOUNDS NOTED"
         temp = numpy.where((numpy.logical_and(numpy.greater_equal(params, lb), numpy.less_equal(params, ub)) * 1) == 0)

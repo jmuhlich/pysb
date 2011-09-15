@@ -278,20 +278,15 @@ def compare_data(xparray, simarray, xspairlist, xparrayvar=None):
             xparrayvar = xparrayvar * xparrayvar
 
         xparrayvar = xparrayvar*2.0
-
-        #remove zeros from xparrayvar that are from experiment
-        for i in range(len(xparrayvar)):
-            if xparrayvar[i] == 0:
-                xparrayvar[i] += 1e-300 #add a tiny amount so that it is effectively not zero
-        
+        #numpy.seterr(divide='ignore')
         objarray = diffsqarray / xparrayvar
-        
+
         # check for inf in objarray, they creep up when there are near zero or zero values in xparrayvar
         for i in range(len(objarray)):
             if numpy.isinf(objarray[i]) or numpy.isnan(objarray[i]):
                 #print "CORRECTING NAN OR INF. IN ARRAY"
                 # print objarray
-                objarray[i] = 1e-20 #zero enough
+                objarray[i] = 1e-100 #zero enough
 
         objout += objarray.sum()
         print "OBJOUT(%d,%d):%f  OBJOUT(CUM):%f"%(xparrayaxis, simarrayaxis, objarray.sum(), objout)

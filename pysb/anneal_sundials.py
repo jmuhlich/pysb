@@ -274,7 +274,7 @@ def compare_data(xparray, simarray, xspairlist, xparrayvar=None):
         # assume a default .05 variance
         if xparrayvar is None:
             xparrayvar = numpy.ones(xparray.shape[1])
-            xparrayvar = xparray[xparrayaxis]*.05 # 5% variance w the experimental data
+            xparrayvar = xparray[xparrayaxis]*.341 # 1 stdev w the experimental data... 
             xparrayvar = xparrayvar * xparrayvar
 
         xparrayvar = xparrayvar*2.0
@@ -288,13 +288,16 @@ def compare_data(xparray, simarray, xspairlist, xparrayvar=None):
                 # print objarray
                 objarray[i] = 1e-100 #zero enough
 
+        #import code
+        #code.interact(local=locals())
+
         objout += objarray.sum()
         print "OBJOUT(%d,%d):%f  OBJOUT(CUM):%f"%(xparrayaxis, simarrayaxis, objarray.sum(), objout)
 
     print "OBJOUT(total):", objout
     return objout
 
-def getgenparambounds(params, omag=3, N=1000., xptonorm=None):
+def getgenparambounds(params, omag=3, N=1000.):
     # params must be a numpy array
     # from: http://projects.scipy.org/scipy/ticket/1126
     # The input-parameters "lower" and "upper" do not refer to global bounds of the
@@ -322,18 +325,10 @@ def getgenparambounds(params, omag=3, N=1000., xptonorm=None):
     lower = params - dx #/2
     upper = params + dx #/2
     
-    if xptonorm.any():
-        # xptonorm should be the array of xpdata
-        normfact = numpy.max(xptonorm, axis=1)
-        xpnorm = (xptonorm.T/normfact).T
-        # leave time axis alone
-        xpnorm[0] = xptonorm[0].copy()
-        return lb, ub, lower, upper, xpnorm, normfact
-    else:
-        return lb, ub, lower, upper
+    return lb, ub, lower, upper
 
 
-def annealfxn(params, useparams, time, model, envlist, xpdata, xspairlist, lb, ub, normfact=False):
+def annealfxn(params, useparams, time, model, envlist, xpdata, xspairlist, lb, ub, norm=False):
     ''' Feeder function for scipy.optimize.anneal
     '''
     # sample anneal call full model:
@@ -354,10 +349,13 @@ def annealfxn(params, useparams, time, model, envlist, xpdata, xspairlist, lb, u
 
     if numpy.greater_equal(params, lb).all() and numpy.less_equal(params, ub).all():
         outlist = annlodesolve(model, time, envlist, params, useparams)
-        # specify if xpdata is normalized by passing normalization factors for each array 
-        if normfact.any():
-            outlistnorm =(outlist[0].T/normfact).T
-            # xpdata[0] should be time, skip
+        # specify that this is normalized data
+        if norm is True:
+            print "Normalizing data"
+            datamax = numpy.max(outlist[0], axis = 1)
+            datamin = numpy.min(outlist[0], axis = 1)
+            outlistnorm = ((outlist[0].T - datamin)/(datamax-datamin)).T
+            # xpdata[0] should be time, get from original array
             outlistnorm[0] = outlist[0][0].copy()
             # xpdata here is normalized, and so is outlistnorm
             objout = compare_data(xpdata, outlistnorm, xspairlist)

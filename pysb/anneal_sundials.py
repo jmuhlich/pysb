@@ -156,7 +156,7 @@ def annlodesolve(model, tfinal, envlist, params, useparams=None, tinit = 0.0, re
     
     #print "Beginning integration"
     #print "TINIT:", tinit, "TFINAL:", tfinal, "TADD:", tadd, "ODESIZE:", odesize
-    print "Integrating Parameters:\n", params
+    #print "Integrating Parameters:\n", params
     #print "y0:", yzero
 
     for step in range(1, nsteps):
@@ -348,6 +348,7 @@ def annealfxn(params, useparams, time, model, envlist, xpdata, xspairlist, lb, u
     #
 
     if numpy.greater_equal(params, lb).all() and numpy.less_equal(params, ub).all():
+        print "Integrating..."
         outlist = annlodesolve(model, time, envlist, params, useparams)
         # specify that this is normalized data
         if norm is True:
@@ -360,7 +361,7 @@ def annealfxn(params, useparams, time, model, envlist, xpdata, xspairlist, lb, u
             # xpdata here is normalized, and so is outlistnorm
             objout = compare_data(xpdata, outlistnorm, xspairlist)
         else:
-            objout = compare_data(xpdata, outlist[0], xspairlist)
+            objout = compare_data(xpdata, outlist, xspairlist)
     else:
         print "======>VALUE OUT OF BOUNDS NOTED"
         temp = numpy.where((numpy.logical_and(numpy.greater_equal(params, lb), numpy.less_equal(params, ub)) * 1) == 0)

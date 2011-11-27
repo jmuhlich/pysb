@@ -64,7 +64,6 @@ def odeinit(model):
         # notice: p[i] ~ model.parameters[i].name ~ model.parameters[i].value
         data.p[i] = model.parameters[i].value
 
-    # if no sensitivity analysis is needed allocate the "p" array as a 
     # pointer array that can be called by sundials "f" as needed
     def f(t, y, ydot, f_data):
         data = ctypes.cast(f_data, PUserData).contents

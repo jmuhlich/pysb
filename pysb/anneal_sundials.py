@@ -216,7 +216,7 @@ def read_csv_array(xpfname):
     darray = darray.T
     return (darray, headstring)
 
-def compare_data(xparray, simarray, xspairlist, xparrayvar=None):
+def compare_data(xparray, simarray, xspairlist, vardata=False):
     """Compares two arrays of different size and returns the X^2 between them.
     Uses the X axis as the unit to re-grid both arrays. 
     xparray: experimental data
@@ -270,9 +270,12 @@ def compare_data(xparray, simarray, xspairlist, xparrayvar=None):
         
         diffarray = ipsimarray - xparray[xparrayaxis]
         diffsqarray = diffarray * diffarray
+
+        if vardata is not False:
+            xparrayvar = xparray[xparrayaxis+1] # variance data provided in xparray in next column
         
         # assume a default .05 variance
-        if xparrayvar is None:
+        if vardata is False:
             xparrayvar = numpy.ones(xparray.shape[1])
             xparrayvar = xparray[xparrayaxis]*.341 # 1 stdev w the experimental data... 
             xparrayvar = xparrayvar * xparrayvar
@@ -328,7 +331,7 @@ def getgenparambounds(params, omag=3, N=1000.):
     return lb, ub, lower, upper
 
 
-def annealfxn(params, useparams, time, model, envlist, xpdata, xspairlist, lb, ub, norm=False):
+def annealfxn(params, useparams, time, model, envlist, xpdata, xspairlist, lb, ub, norm=False, vardata=False):
     ''' Feeder function for scipy.optimize.anneal
     '''
     # sample anneal call full model:
@@ -358,9 +361,9 @@ def annealfxn(params, useparams, time, model, envlist, xpdata, xspairlist, lb, u
             # xpdata[0] should be time, get from original array
             outlistnorm[0] = outlist[0][0].copy()
             # xpdata here is normalized, and so is outlistnorm
-            objout = compare_data(xpdata, outlistnorm, xspairlist)
+            objout = compare_data(xpdata, outlistnorm, xspairlist, vardata)
         else:
-            objout = compare_data(xpdata, outlist[0], xspairlist)
+            objout = compare_data(xpdata, outlist[0], xspairlist, vardata)
     else:
         print "======>VALUE OUT OF BOUNDS NOTED"
         temp = numpy.where((numpy.logical_and(numpy.greater_equal(params, lb), numpy.less_equal(params, ub)) * 1) == 0)

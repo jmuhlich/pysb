@@ -271,13 +271,14 @@ def compare_data(xparray, simarray, xspairlist, vardata=False):
         diffarray = ipsimarray - xparray[xparrayaxis]
         diffsqarray = diffarray * diffarray
 
-        if vardata is not False:
+        if vardata is True:
+            #print "using XP VAR",xparrayaxis+1
             xparrayvar = xparray[xparrayaxis+1] # variance data provided in xparray in next column
-        
+            
         # assume a default .05 variance
         if vardata is False:
             xparrayvar = numpy.ones(xparray.shape[1])
-            xparrayvar = xparray[xparrayaxis]*.341 # 1 stdev w the experimental data... 
+            xparrayvar = xparray[xparrayaxis]*.341 # 1 stdev w/in 1 sigma of the experimental data... 
             xparrayvar = xparrayvar * xparrayvar
 
         xparrayvar = xparrayvar*2.0
@@ -300,7 +301,7 @@ def compare_data(xparray, simarray, xspairlist, vardata=False):
     print "OBJOUT(total):", objout
     return objout
 
-def getgenparambounds(params, omag=3, N=1000.):
+def getgenparambounds(params, omag=1, N=1000., useparams=None, usemag=None, useN=None ):
     # params must be a numpy array
     # from: http://projects.scipy.org/scipy/ticket/1126
     # The input-parameters "lower" and "upper" do not refer to global bounds of the
@@ -318,26 +319,36 @@ def getgenparambounds(params, omag=3, N=1000.):
     # f=lambda var: costfunction(p,lb,ub) #my cost function that is made very high if not lb < p < ub
     # pbest=scipy.optimize.anneal(f,p,lower=lower,upper=upper)
     # This ensures a MC search that starts of close to my initial value and makes steps of dx in its search.
-
+    if useparams is None:
+        useparams = []
+    ub = numpy.zeros(len(params))
+    lb = numpy.zeros(len(params))
+    dx = numpy.zeros(len(params))
     # set upper/lower bounds for generic problem
-    ub = params * pow(10,omag)
-    lb = params / pow(10,omag)
-    
-    # maximum displacements of the anneal routine
-    dx = (ub-lb)/N
-    lower = params - dx #/2
-    upper = params + dx #/2
-    
-    return lb, ub, lower, upper
+    for i in range(len(params)):
+        if i in useparams:
+            ub[i] = params[i] * pow(10,usemag)
+            lb[i] = params[i] / pow(10,usemag)
+            dx[i] = (ub[i] - lb[i])/useN
+        else:
+            ub[i] = params[i] * pow(10, omag)
+            lb[i] = params[i] / pow(10, omag)
+            dx[i] = (ub[i] - lb[i])/N
+    #print dx
+    lower = params - dx/2
+    lower[numpy.where(lower<0.)] = 0.0 #make sure we don't go negative on parameters
+    upper = params + dx/2
 
+    return lb, ub, lower, upper
 
 def annealfxn(params, useparams, time, model, envlist, xpdata, xspairlist, lb, ub, norm=False, vardata=False):
     ''' Feeder function for scipy.optimize.anneal
     '''
+    #annlout = scipy.optimize.anneal(pysb.anneal_sundials.annealfxn, paramarr, 
+    #                                args=(None, 20000, model, envlist, xpnormdata, 
+    #                                [(2,1),(4,2),(7,3)], lb, ub, True, True), 
+    #                                lower=lower, upper=upper, full_output=1)
     # sample anneal call full model:
-    # annlout = scipy.optimize.anneal(pysb.anneal_sundials.annealfxn, params, 
-    #                                 args=(65000, model, envlist, xpdata, [(2,2), (3,3)], lb, ub), 
-    #                                 lower=lower, upper=upper)
     # params: parameters to be optimized
     # lower,upper: arrays from get array function or something similar from getgenparambounds
     # lb, ub: lower bound and upper bound for function from getgenparambounds
@@ -372,6 +383,87 @@ def annealfxn(params, useparams, time, model, envlist, xpdata, xspairlist, lb, u
             print "======>",i, params[i]
         objout = 1.0e300 # the largest FP in python is 1.0e308, otherwise it is just Inf
     return objout
+
+def tenninetycomp(arglist):
+    """ Determine Td and Ts. Td calculated at time when signal goes up to 10%.
+        Ts calculated as signal(90%) - signal(10%). Then a chi-square is calculated.  
+    """
+    xarr = arglist[0][0] #this assumes the first column of the array is time
+    yarr = arglist[0][arglist[1]] #the argument passed should be the axis
+    Tdxp = arglist[2]
+    varTdxp = arglist[3]
+    Tsxp = arglist[4]
+    varTsxp = arglist[5]
+    
+    # make a B-spine representation of the xarr and yarr
+    tck = scipy.interpolate(xarr, yarr)
+    t, c, k = tck
+    tenpt = numpy.max(yarr) * .1 # the ten percent point in y-axis
+    ntypt = nimpy.max(yarr) * .9 # the 90 percent point in y-axis
+    #lower the spline at the abcissa
+    xten = scipy.interpolate.sproot((t, c-tenpt, k))[0]
+    xnty = scipy.interpolate.sproot((t, c-ntypt, k))[0]
+
+    #now compare w the input data, Td, and Ts
+    Tdsim = xten #the Td is the point where the signal crosses 10%; should be the midpoint???
+    Tssim = xnty - xten
+    
+    # calculate chi-sq as
+    # 
+    #            1                           1
+    # obj = ----------(Tdsim - Tdxp)^2 + --------(Tssim - Tsxp)^2
+    #       2*var_Tdxp                   2*var_Td 
+    #
+    
+    obj = ((1./varTdxp) * (Tdsim - Tdxp)**2.) + ((1./varTsxp) * (Tssim - Tsxp)**2.)
+    
+    print "OBJOUT(%d,%d):%f  OBJOUT(CUM):%f"%(xparrayaxis, simarrayaxis, objarray.sum(), objout)
+
+    return obj    
+
+
+def annealfxncust(params, useparams, time, model, envlist, xpdata, xspairlist, tenninetylist, lb, ub, norm=False, vardata=False):
+    ''' Feeder function for scipy.optimize.anneal
+    '''
+    # Customized anneal function for the case when Smac is not fit to a function. Here we
+    # measure the Smac output from the model and use a 10-90 criterion to extract Td and Ts.
+    # We then use a chi-square comparison to these two values for the Smac contribution to the 
+    # data fitting. 
+    #
+    # 
+    #
+
+    if numpy.greater_equal(params, lb).all() and numpy.less_equal(params, ub).all():
+        print "Integrating..."
+        outlist = annlodesolve(model, time, envlist, params, useparams)
+        # specify that this is normalized data
+        if norm is True:
+            print "Normalizing data"
+            datamax = numpy.max(outlist[0], axis = 1)
+            datamin = numpy.min(outlist[0], axis = 1)
+            outlistnorm = ((outlist[0].T - datamin)/(datamax-datamin)).T
+            # xpdata[0] should be time, get from original array
+            outlistnorm[0] = outlist[0][0].copy()
+            # xpdata here is normalized, and so is outlistnorm
+            objout = compare_data(xpdata, outlistnorm, xspairlist, vardata)
+            # This takes care of the IC/EC-RP comparisons
+            # Now SMAC
+            objout += tenninety(tenninetylist)
+        else:
+            objout = compare_data(xpdata, outlist[0], xspairlist, vardata)
+    else:
+        print "======>VALUE OUT OF BOUNDS NOTED"
+        temp = numpy.where((numpy.logical_and(numpy.greater_equal(params, lb), numpy.less_equal(params, ub)) * 1) == 0)
+        for i in temp:
+            print "======>",i, params[i]
+        objout = 1.0e300 # the largest FP in python is 1.0e308, otherwise it is just Inf
+    return objout
+
+    
+
+
+
+
 
     
 

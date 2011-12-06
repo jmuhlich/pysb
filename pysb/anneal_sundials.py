@@ -274,9 +274,8 @@ def compare_data(xparray, simarray, xspairlist, vardata=False):
         if vardata is True:
             #print "using XP VAR",xparrayaxis+1
             xparrayvar = xparray[xparrayaxis+1] # variance data provided in xparray in next column
-            
-        # assume a default .05 variance
-        if vardata is False:
+        else:
+        # assume a default variance
             xparrayvar = numpy.ones(xparray.shape[1])
             xparrayvar = xparray[xparrayaxis]*.341 # 1 stdev w/in 1 sigma of the experimental data... 
             xparrayvar = xparrayvar * xparrayvar
@@ -384,22 +383,22 @@ def annealfxn(params, useparams, time, model, envlist, xpdata, xspairlist, lb, u
         objout = 1.0e300 # the largest FP in python is 1.0e308, otherwise it is just Inf
     return objout
 
-def tenninetycomp(arglist):
+def tenninetycomp(outlistnorm, arglist, xpsamples):
     """ Determine Td and Ts. Td calculated at time when signal goes up to 10%.
         Ts calculated as signal(90%) - signal(10%). Then a chi-square is calculated.  
     """
-    xarr = arglist[0][0] #this assumes the first column of the array is time
-    yarr = arglist[0][arglist[1]] #the argument passed should be the axis
-    Tdxp = arglist[2]
-    varTdxp = arglist[3]
-    Tsxp = arglist[4]
-    varTsxp = arglist[5]
+    xarr = outlistnorm[0] #this assumes the first column of the array is time
+    yarr = outlistnorm[arglist[0]] #the argument passed should be the axis
+    Tdxp = arglist[1]
+    varTdxp = arglist[2]
+    Tsxp = arglist[3]
+    varTsxp = arglist[4]
     
     # make a B-spine representation of the xarr and yarr
-    tck = scipy.interpolate(xarr, yarr)
+    tck = scipy.interpolate.splrep(xarr, yarr)
     t, c, k = tck
     tenpt = numpy.max(yarr) * .1 # the ten percent point in y-axis
-    ntypt = nimpy.max(yarr) * .9 # the 90 percent point in y-axis
+    ntypt = numpy.max(yarr) * .9 # the 90 percent point in y-axis
     #lower the spline at the abcissa
     xten = scipy.interpolate.sproot((t, c-tenpt, k))[0]
     xnty = scipy.interpolate.sproot((t, c-ntypt, k))[0]
@@ -416,8 +415,9 @@ def tenninetycomp(arglist):
     #
     
     obj = ((1./varTdxp) * (Tdsim - Tdxp)**2.) + ((1./varTsxp) * (Tssim - Tsxp)**2.)
+    obj *= xpsamples
     
-    print "OBJOUT(%d,%d):%f  OBJOUT(CUM):%f"%(xparrayaxis, simarrayaxis, objarray.sum(), objout)
+    print "OBJOUT-10-90:(%g,%g):%f"%(Tdxp, Tsxp, obj)
 
     return obj    
 
@@ -448,9 +448,13 @@ def annealfxncust(params, useparams, time, model, envlist, xpdata, xspairlist, t
             objout = compare_data(xpdata, outlistnorm, xspairlist, vardata)
             # This takes care of the IC/EC-RP comparisons
             # Now SMAC
-            objout += tenninety(tenninetylist)
+            tn = tenninetycomp(outlistnorm, tenninetylist,len(xpdata[0]))
+            objout += tn 
+            print "objout TOT:", objout
         else:
             objout = compare_data(xpdata, outlist[0], xspairlist, vardata)
+            tn = tenninetycomp(outlistnorm, tenninetylist)
+            objout += tn 
     else:
         print "======>VALUE OUT OF BOUNDS NOTED"
         temp = numpy.where((numpy.logical_and(numpy.greater_equal(params, lb), numpy.less_equal(params, ub)) * 1) == 0)

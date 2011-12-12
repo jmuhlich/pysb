@@ -417,7 +417,7 @@ def tenninetycomp(outlistnorm, arglist, xpsamples):
     obj = ((1./varTdxp) * (Tdsim - Tdxp)**2.) + ((1./varTsxp) * (Tssim - Tsxp)**2.)
     obj *= xpsamples
     
-    print "OBJOUT-10-90:(%g,%g):%f"%(Tdxp, Tsxp, obj)
+    print "OBJOUT-10-90:(%f,%f):%f"%(Tdsim, Tssim, obj)
 
     return obj    
 

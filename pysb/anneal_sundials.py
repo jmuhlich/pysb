@@ -106,7 +106,7 @@ def annlinit(model, reltol=1.0e-7, abstol=1.0e-11, nsteps = 1000, itermaxstep = 
     return [f, rhs_exprs, y, ydot, odesize, data, xout, yout, nsteps, cvode_mem, yzero], paramarray
 
 
-def annlodesolve(model, tfinal, envlist, params, useparams=None, tinit = 0.0, reltol=1.0e-7, abstol=1.0e-11):
+def annlodesolve(model, tfinal, envlist, params, useparams=None, tinit = 0.0, reltol=1.0e-7, abstol=1.0e-11, ic=False):
     '''
     the ODE equation solver taylored to work with the annealing algorithm
     model: the model object
@@ -116,6 +116,7 @@ def annlodesolve(model, tfinal, envlist, params, useparams=None, tinit = 0.0, re
     tinit: initial time
     reltol: relative tolerance
     abstol: absolute tolerance
+    ic: reinitialize initial conditions to a value in params or useparams
     '''
     f = envlist[0]
     rhs_exprs = envlist[1]
@@ -130,7 +131,7 @@ def annlodesolve(model, tfinal, envlist, params, useparams=None, tinit = 0.0, re
     yzero = envlist[10]
 
     #set the initial values and params in each run
-    #all parameters are used in annealing
+    #all parameters are used in annealing. initial conditions are not, here
     if useparams is None:
         for i in range(len(params)):
             data.p[i] = params[i]
@@ -139,9 +140,22 @@ def annlodesolve(model, tfinal, envlist, params, useparams=None, tinit = 0.0, re
         for i in range(len(useparams)):
             #print "changing parameter", model.parameters[useparams[i]],"data.p", data.p[useparams[i]],"to", params[i]
             data.p[useparams[i]] = params[i]
-        #for i, j in enumerate([x for x, y in enumerate(useparams) if y == 1]):
-        #    data.p[j] = params[i]
 
+    # update yzero if initial conditions are being modified as part of the parameters
+    # did it this way b/c yzero and data.p may not always want to be modified at the same time
+    # FIXME: this is not the best way to do this.
+    # the params list should NOT contain the initial conditions if they are not
+    # to be used in the annealing... so this is a hack based on the fact that the
+    # initial conditions are contained as part of the model.parameters list.
+    # FIXME
+    #
+    if ic is True:
+        for cplxptrn, ic_param in model.initial_conditions:
+            for i in range(len(model.parameters)):
+                if model.parameters[i].name == ic_param.name:
+                    speci = model.get_species_index(cplxptrn)
+                    yzero[speci] = params[i]
+                    break
 
     #reset initial concentrations
     y = cvode.NVector(yzero)
@@ -383,9 +397,12 @@ def annealfxn(params, useparams, time, model, envlist, xpdata, xspairlist, lb, u
         objout = 1.0e300 # the largest FP in python is 1.0e308, otherwise it is just Inf
     return objout
 
-def tenninetycomp(outlistnorm, arglist, xpsamples):
+def tenninetycomp(outlistnorm, arglist, xpsamples=1.0):
     """ Determine Td and Ts. Td calculated at time when signal goes up to 10%.
-        Ts calculated as signal(90%) - signal(10%). Then a chi-square is calculated.  
+        Ts calculated as signal(90%) - signal(10%). Then a chi-square is calculated.
+        outlistnorm: the outlist from anneal_odesolve
+        arglist: simaxis, Tdxp, varTdxp, Tsxp, varTsxp
+        xpsamples
     """
     xarr = outlistnorm[0] #this assumes the first column of the array is time
     yarr = outlistnorm[arglist[0]] #the argument passed should be the axis

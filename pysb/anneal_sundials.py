@@ -354,7 +354,7 @@ def getgenparambounds(params, omag=1, N=1000., useparams=None, usemag=None, useN
 
     return lb, ub, lower, upper
 
-def annealfxn(params, useparams, time, model, envlist, xpdata, xspairlist, lb, ub, norm=False, vardata=False):
+def annealfxn(params, useparams, time, model, envlist, xpdata, xspairlist, lb, ub, norm=False, vardata=False, fileobj=None):
     ''' Feeder function for scipy.optimize.anneal
     '''
     #annlout = scipy.optimize.anneal(pysb.anneal_sundials.annealfxn, paramarr, 
@@ -395,7 +395,40 @@ def annealfxn(params, useparams, time, model, envlist, xpdata, xspairlist, lb, u
         for i in temp:
             print "======>",i, params[i]
         objout = 1.0e300 # the largest FP in python is 1.0e308, otherwise it is just Inf
+
+    # save the params and temps for analysis
+    if fileobj:
+        if norm:
+            writetofile(fileobj, params, outlistnorm, objout)
+        else:
+            writetofile(fileobj, params, outlist, objout)
+    
     return objout
+
+def writetofile(fout, simparms, simdata, temperature):
+    imax, jmax = simdata.shape
+    nparms = len(simparms)
+
+    fout.write('# TEMPERATURE\n{}\n'.format(temperature))
+    fout.write('# PARAMETERS ({})\n'.format(len(simparms)))
+    for i in range(nparms):
+        fout.write('{}'.format(simparms[i]))
+        if (i !=0 and i%5 == 0) or (i == nparms-1):
+            fout.write('\n')
+        else:
+            fout.write(', ')
+            
+    fout.write('# SIMDATA ({},{})\n'.format(imax, jmax))
+    for i in range(imax):
+        fout.write('# {}\n'.format(i))
+        for j in range(jmax):
+            fout.write('{}'.format(simdata[i][j]))
+            if (j != 0 and j%10 == 0) or (j == jmax-1):
+                fout.write('\n')
+            else:
+                fout.write(', ')
+    fout.write('#-------------------------------------------------------------------------------------------------\n')
+    return
 
 def tenninetycomp(outlistnorm, arglist, xpsamples=1.0):
     """ Determine Td and Ts. Td calculated at time when signal goes up to 10%.
@@ -439,7 +472,7 @@ def tenninetycomp(outlistnorm, arglist, xpsamples=1.0):
     return obj    
 
 
-def annealfxncust(params, useparams, time, model, envlist, xpdata, xspairlist, tenninetylist, lb, ub, norm=False, vardata=False):
+def annealfxncust(params, useparams, time, model, envlist, xpdata, xspairlist, tenninetylist, lb, ub, norm=False, vardata=False, fileobj = False):
     ''' Feeder function for scipy.optimize.anneal
     '''
     # Customized anneal function for the case when Smac is not fit to a function. Here we

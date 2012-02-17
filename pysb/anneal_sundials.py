@@ -24,18 +24,12 @@ def annlinit(model, reltol=1.0e-7, abstol=1.0e-11, nsteps = 1000, itermaxstep = 
     yzero = numpy.zeros(odesize)  #initial values for yzero
     
     # assign the initial conditions
-    # FIXME: code outside of model shouldn't handle parameter_overrides 
-    # FIXME: Species really should be a class with methods such as .name, .index, etc...
     for cplxptrn, ic_param in model.initial_conditions:
-        override = model.parameter_overrides.get(ic_param.name)
-        if override is not None:
-            ic_param = override
         speci = model.get_species_index(cplxptrn)
         yzero[speci] = ic_param.value
 
     # initialize y with the yzero values
     y = cvode.NVector(yzero)
-    numparams = len(model.parameters)
         
     # make a dict of ydot functions. notice the functions are in this namespace.
     # replace the kxxxx constants with elements from the params array
@@ -44,10 +38,10 @@ def annlinit(model, reltol=1.0e-7, abstol=1.0e-11, nsteps = 1000, itermaxstep = 
         # first get the function string from sympy, replace the the "sN" with y[N]
         tempstring = re.sub(r's(\d+)', lambda m: 'y[%s]'%(int(m.group(1))), str(model.odes[i]))
         # now replace the constants with 'p' array names; cycle through the whole list
-        for j in range(0, numparams):
-            tempstring = re.sub('(?<![A-Za-z0-9_])%s(?![A-Za-z0-9_])'%(model.parameters[j].name),
-                                'p[%d]'%(j), tempstring)
-
+        #for j in range(0, numparams):
+        #    tempstring = re.sub('(?<![A-Za-z0-9_])%s(?![A-Za-z0-9_])'%(model.parameters[j].name),'p[%d]'%(j), tempstring)
+        for j, parameter in enumerate(model.parameters):
+            tempstring = re.sub('(?<![A-Za-z0-9_])%s(?![A-Za-z0-9_])' % parameter.name, 'p[%d]' % j, tempstring)
         # make a list of compiled rhs expressions which will be run by the integrator
         # use the ydots to build the function for analysis
         # (second arg is the "filename", useful for exception/debug output)
@@ -55,19 +49,22 @@ def annlinit(model, reltol=1.0e-7, abstol=1.0e-11, nsteps = 1000, itermaxstep = 
     
     # Create the structure to hold the parameters when calling the function
     # This results in a generic "p" array
+    numparams = len(model.parameters)
     class UserData(ctypes.Structure):
         _fields_ = [('p', cvode.realtype*numparams)] # parameters
     PUserData = ctypes.POINTER(UserData)
     data = UserData() 
 
     #paramlist for annealing feeder function
-    paramlist = []
-    for i in range(0, numparams):
-        # notice: p[i] ~ model.parameters[i].name ~ model.parameters[i].value
-        data.p[i] = model.parameters[i].value
-        paramlist.append(model.parameters[i].value)
-    paramarray = numpy.asarray(paramlist)
-    
+    #paramlist = []
+    #for i in range(0, numparams):
+    #    # notice: p[i] ~ model.parameters[i].name ~ model.parameters[i].value
+    #    data.p[i] = model.parameters[i].value
+    #    paramlist.append(model.parameters[i].value)
+    #paramarray = numpy.asarray(paramlist)
+
+    data.p[:] = [p.value for p in model.parameters]
+    paramarray = numpy.array([p.value for p in model.parameters])
     
     # if no sensitivity analysis is needed allocate the "p" array as a 
     # pointer array that can be called by sundials "f" as needed
@@ -152,11 +149,9 @@ def annlodesolve(model, tfinal, envlist, params, useparams=None, tinit = 0.0, re
     #
     if ic is True:
         for cplxptrn, ic_param in model.initial_conditions:
-            for i in range(len(model.parameters)):
-                if model.parameters[i].name == ic_param.name:
-                    speci = model.get_species_index(cplxptrn)
-                    yzero[speci] = params[i]
-                    break
+            speci = model.get_species_index(cplxptrn)
+            yzero[speci] = ic_param.value
+            
 
     #reset initial concentrations
     y = cvode.NVector(yzero)

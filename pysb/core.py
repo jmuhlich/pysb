@@ -403,9 +403,9 @@ class MonomerPattern(object):
                 for k in self.monomer.sites
                 if self.site_conditions.has_key(k)
                 ])
-        if self.compartment is not None:
-            value += ', compartment=' + self.compartment.name
         value += ')'
+        if self.compartment is not None:
+            value += ' ** ' + self.compartment.name
         return value
 
 
@@ -470,7 +470,9 @@ class ComplexPattern(object):
             return ComplexPattern(self.monomer_patterns + [other], self.compartment, self.match_once)
         elif isinstance(other, ComplexPattern):
             if self.compartment is not other.compartment:
-                raise ValueError("merged ComplexPatterns must be identical")
+                raise ValueError("merged ComplexPatterns must specify the same compartment")
+            elif self.match_once != other.match_once:
+                raise ValueError("merged ComplexPatterns must have the same value of match_once")
             return ComplexPattern(self.monomer_patterns + other.monomer_patterns, self.compartment, self.match_once)
         else:
             return NotImplemented

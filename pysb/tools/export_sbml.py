@@ -16,9 +16,35 @@ def run(model):
 
     output.write(
         """<?xml version="1.0" encoding="UTF-8"?>
-<sbml xmlns="http://www.sbml.org/sbml/level2/version4" level="2" version="4">
+  <sbml xmlns="http://www.sbml.org/sbml/level2/version4" xmlns:celldesigner="http://www.sbml.org/2001/ns/celldesigner" level="2" version="4">
     <model>
-        <listOfCompartments>
+""")
+    output.write(
+        """<annotation>
+  <celldesigner:extension>
+  <celldesigner:modelVersion>4.0</celldesigner:modelVersion>
+  <celldesigner:listOfSpeciesAliases>
+""")
+    for i in range(len(model.species)):
+        output.write(
+            """    <celldesigner:speciesAlias id="sa%d" species="s%d">
+      <celldesigner:bounds x="0" y="0" w="80.0" h="40.0"/>
+      <celldesigner:view state="usual"/>
+    </celldesigner:speciesAlias>
+""" % (i, i))
+    output.write(
+        """  </celldesigner:listOfSpeciesAliases>
+  <celldesigner:listOfProteins>
+""")
+    for i, cp in enumerate(model.species):
+        name = str(cp).replace('% ', '._br_')  # CellDesigner does something weird with % in names
+        output.write('    <celldesigner:protein id="pr%d" name="%s" type="GENERIC"/>\n' % (i, name))
+    output.write("""  </celldesigner:listOfProteins>
+  </celldesigner:extension>
+</annotation>
+""")
+    output.write(
+        """        <listOfCompartments>
             <compartment id="default" name="default" spatialDimensions="0"/>
         </listOfCompartments>
 """)
@@ -28,7 +54,20 @@ def run(model):
         ics[model.get_species_index(cp)][1] = ic_param.value
     output.write("        <listOfSpecies>\n")
     for i, (cp, value) in enumerate(ics):
-        output.write('            <species id="s%d" name="%s" compartment="default" initialAmount="%e"/>\n' % (i, str(cp), value));
+        name = str(cp).replace('%', '.')  # CellDesigner does something weird with % in names
+        output.write('            <species id="s%d" name="%s" compartment="default" initialAmount="%e">\n' % (i, name, value));
+        output.write(
+            """                <annotation>
+                    <celldesigner:extension>
+                      <celldesigner:speciesIdentity>
+                        <celldesigner:class>PROTEIN</celldesigner:class>
+                        <celldesigner:proteinReference>pr%d</celldesigner:proteinReference>
+                      </celldesigner:speciesIdentity>
+                    </celldesigner:extension>
+                </annotation>
+            </species>
+""" % i)
+
     output.write("        </listOfSpecies>\n")
 
     output.write("        <listOfParameters>\n")
@@ -40,13 +79,45 @@ def run(model):
     for i, reaction in enumerate(model.reactions_bidirectional):
         reversible = str(reaction['reversible']).lower()
         output.write('            <reaction id="r%d" name="r%d" reversible="%s">\n' % (i, i, reversible));
+        output.write(
+            """      <annotation>
+        <celldesigner:extension>
+          <celldesigner:reactionType>HETERODIMER_ASSOCIATION</celldesigner:reactionType>
+          <celldesigner:baseReactants>
+""")
+        for i in reaction['reactants']:
+            output.write('            <celldesigner:baseReactant species="s%d" alias="sa%d"/>\n' % (i, i))
+        output.write("          </celldesigner:baseReactants>\n          <celldesigner:baseProducts>\n")
+        for i in reaction['products']:
+            output.write('            <celldesigner:baseProduct species="s%d" alias="sa%d"/>\n' % (i, i))
+        output.write(
+            """          </celldesigner:baseProducts>
+          <celldesigner:editPoints>0,0</celldesigner:editPoints>
+        </celldesigner:extension>
+      </annotation>
+""")
+
         output.write('                <listOfReactants>\n');
         for species in reaction['reactants']:
-            output.write('                    <speciesReference species="s%d"/>\n' % species)
+            output.write('                    <speciesReference species="s%d">\n' % species)
+            output.write("""          <annotation>
+            <celldesigner:extension>
+              <celldesigner:alias>sa%d</celldesigner:alias>
+            </celldesigner:extension>
+          </annotation>
+""" % species)
+            output.write('                    </speciesReference>\n')
         output.write('                </listOfReactants>\n');
         output.write('                <listOfProducts>\n');
         for species in reaction['products']:
-            output.write('                    <speciesReference species="s%d"/>\n' % species)
+            output.write('                    <speciesReference species="s%d">\n' % species)
+            output.write("""          <annotation>
+            <celldesigner:extension>
+              <celldesigner:alias>sa%d</celldesigner:alias>
+            </celldesigner:extension>
+          </annotation>
+""" % species)
+            output.write('                    </speciesReference>\n')
         output.write('                </listOfProducts>\n');
         formula = sympy.ccode(reaction['rate'])
         output.write('                <kineticLaw formula="%s"/>\n' % formula);

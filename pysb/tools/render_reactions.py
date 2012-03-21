@@ -14,17 +14,22 @@ def run(model):
     pysb.bng.generate_equations(model)
 
     graph = pygraphviz.AGraph(directed=True, rankdir="LR")
+    ic_species = [cp for cp, parameter in model.initial_conditions]
     for i, cp in enumerate(model.species):
         species_node = 's%d' % i
         slabel = re.sub(r'% ', r'%\\l', str(cp))
         slabel += '\\l'
+        color = "#ccffcc"
+        # color species with an initial condition differently
+        if len([s for s in ic_species if s.is_equivalent_to(cp)]):
+            color = "#aaffff"
         graph.add_node(species_node,
                        label=slabel,
                        shape="Mrecord",
-                       fillcolor="#ccffcc", style="filled", color="transparent",
+                       fillcolor=color, style="filled", color="transparent",
                        fontsize="12",
                        margin="0.06,0")
-    for i, reaction in enumerate(model.reactions):
+    for i, reaction in enumerate(model.reactions_bidirectional):
         reaction_node = 'r%d' % i
         graph.add_node(reaction_node,
                        label=reaction_node,
@@ -37,10 +42,11 @@ def run(model):
         modifiers = reactants & products
         reactants = reactants - modifiers
         products = products - modifiers
+        attr_reversible = {'dir': 'both', 'arrowtail': 'empty'} if reaction['reversible'] else {}
         for s in reactants:
-            r_link(graph, s, i)
+            r_link(graph, s, i, **attr_reversible)
         for s in products:
-            r_link(graph, s, i, _flip=True)
+            r_link(graph, s, i, _flip=True, **attr_reversible)
         for s in modifiers:
             r_link(graph, s, i, arrowhead="odiamond")
     return graph.string()

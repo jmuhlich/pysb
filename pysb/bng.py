@@ -70,21 +70,52 @@ def generate_equations(model):
         while 'begin reactions' not in lines.next():
             pass
         model.odes = [sympy.S(0)] * len(model.species)
+        reaction_cache = {}
         while True:
             line = lines.next()
             if 'end reactions' in line: break
             (number, reactants, products, rate, rule) = line.strip().split()
             # the -1 is to switch from one-based to zero-based indexing
-            reactants = [int(r) - 1 for r in reactants.split(',')]
-            products = [int(p) - 1 for p in products.split(',')]
+            reactants = tuple(int(r) - 1 for r in reactants.split(','))
+            products = tuple(int(p) - 1 for p in products.split(','))
             rate = rate.rsplit('*')
+            (rule_name, is_reverse) = re.match(r'#(\w+)(?:\((reverse)\))?', rule).groups()
+            is_reverse = bool(is_reverse)
             r_names = ['s%d' % r for r in reactants]
             combined_rate = sympy.Mul(*[sympy.S(t) for t in r_names + rate]) 
-            model.reactions.append({'reactants': reactants, 'products': products, 'rate': combined_rate})
+            rule = model.rules[rule_name]
+            reaction = {
+                'reactants': reactants,
+                'products': products,
+                'rate': combined_rate,
+                'rule': rule_name,
+                'reverse': is_reverse,
+                }
+            model.reactions.append(reaction)
+            key = (rule_name, reactants, products)
+            key_reverse = (rule_name, products, reactants)
+            reaction_bd = reaction_cache.get(key_reverse)
+            if reaction_bd is None:
+                # make a copy of the reaction dict
+                reaction_bd = dict(reaction)
+                # default to false until we find a matching reverse reaction
+                reaction_bd['reversible'] = False
+                reaction_cache[key] = reaction_bd
+                model.reactions_bidirectional.append(reaction_bd)
+            else:
+                reaction_bd['reversible'] = True
+                reaction_bd['rate'] -= combined_rate
             for p in products:
                 model.odes[p] += combined_rate
             for r in reactants:
                 model.odes[r] -= combined_rate
+        # fix up reactions whose reverse version we saw first
+        for r in model.reactions_bidirectional:
+            if r['reverse']:
+                r['reactants'], r['products'] = r['products'], r['reactants']
+                r['rate'] *= -1
+            # now the 'reverse' value is no longer needed
+            del r['reverse']
 
         while 'begin groups' not in lines.next():
             pass

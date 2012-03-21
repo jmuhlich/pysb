@@ -28,7 +28,8 @@ def run(model):
         ics[model.get_species_index(cp)][1] = ic_param.value
     output.write("        <listOfSpecies>\n")
     for i, (cp, value) in enumerate(ics):
-        output.write('            <species id="s%d" name="%s" compartment="default" initialAmount="%e"/>\n' % (i, str(cp), value));
+        name = str(cp).replace('% ', '._br_')  # CellDesigner does something weird with % in names
+        output.write('            <species id="s%d" name="%s" compartment="default" initialAmount="%e"/>\n' % (i, name, value));
     output.write("        </listOfSpecies>\n")
 
     output.write("        <listOfParameters>\n")
@@ -37,9 +38,9 @@ def run(model):
     output.write("        </listOfParameters>\n")
 
     output.write("        <listOfReactions>\n")
-    for i, reaction in enumerate(model.reactions):
-        # FIXME we should map reversible rules through to reversible reactions here
-        output.write('            <reaction id="r%d" name="r%d" reversible="false">\n' % (i, i));
+    for i, reaction in enumerate(model.reactions_bidirectional):
+        reversible = str(reaction['reversible']).lower()
+        output.write('            <reaction id="r%d" name="r%d" reversible="%s">\n' % (i, i, reversible));
         output.write('                <listOfReactants>\n');
         for species in reaction['reactants']:
             output.write('                    <speciesReference species="s%d"/>\n' % species)
@@ -48,8 +49,9 @@ def run(model):
         for species in reaction['products']:
             output.write('                    <speciesReference species="s%d"/>\n' % species)
         output.write('                </listOfProducts>\n');
-        formula = sympy.ccode(reaction['rate'])
-        output.write('                <kineticLaw formula="%s"/>\n' % formula);
+        mathml = '<math xmlns="http://www.w3.org/1998/Math/MathML">' \
+            + sympy.printing.mathml(reaction['rate']) + '</math>'
+        output.write('                <kineticLaw>' + mathml + '</kineticLaw>\n');
         output.write('            </reaction>\n');
     output.write("        </listOfReactions>\n")
 

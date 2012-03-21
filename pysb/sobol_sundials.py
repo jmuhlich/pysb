@@ -417,9 +417,12 @@ def writetofile(fout, simparms, simdata, temperature):
     fout.write('#-------------------------------------------------------------------------------------------------\n')
     return
 
+
+
+
 def mapranges():
     ''' Map the range of numbers [0..1] from a sobol sequence to a given range [min..max] using the simple
     formula min + (max - min) * sobolnum. Returns an array of values to be sampled to generate the sobol data
     and use variance sensitivity analysis.'''
-
+    pass
     

@@ -417,6 +417,10 @@ def writetofile(fout, simparms, simdata, temperature):
     fout.write('#-------------------------------------------------------------------------------------------------\n')
     return
 
+# FIXME
+# FIXME: THESE FUNCTIONS SHOULD PROBABLY NOT BE INCLUDED IN THE FINAL VERSION OF THE ANNEAL SUNDIALS FUNCTION
+# FIXME
+
 def tenninetycomp(outlistnorm, arglist, xpsamples=1.0):
     """ Determine Td and Ts. Td calculated at time when signal goes up to 10%.
         Ts calculated as signal(90%) - signal(10%). Then a chi-square is calculated.

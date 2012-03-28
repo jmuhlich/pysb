@@ -16,7 +16,7 @@ Contents:
    tutorial
    user_guide
    mod_ref
-   about 
+   about
 
 Indices and tables
 ==================

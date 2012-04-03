@@ -10,7 +10,7 @@ from pysundials import cvode
 # Thee set of functions set up the system for annealing runs
 # and provide the runner function as input to annealing
 
-def annlinit(model, reltol=1.0e-3, abstol=1.0e-3, nsteps = 1000, itermaxstep = None):
+def annlinit(model, abstol=1.0e-3, reltol=1.0e-3, nsteps = 1000, itermaxstep = None):
     '''
     must be run to set up the environment for annealing with pysundials
     '''
@@ -101,11 +101,11 @@ def annlinit(model, reltol=1.0e-3, abstol=1.0e-3, nsteps = 1000, itermaxstep = N
     for i in range(0, odesize):
         yout[0][i] = y[i]
     
-    return [f, rhs_exprs, y, odesize, data, xout, yout, nsteps, cvode_mem, yzero], paramarray
+    return [f, rhs_exprs, y, odesize, data, xout, yout, nsteps, cvode_mem, yzero, reltol, abstol], paramarray
 
 
 # reltol of 1.0e-3, relative error of ~1%. abstol of 1.0e-2, enough for values that oscillate in the hundreds to thousands
-def annlodesolve(model, tfinal, envlist, params, useparams=None, tinit = 0.0, reltol=1.0e-3, abstol=1.0e-3, ic=True):
+def annlodesolve(model, tfinal, envlist, params, useparams=None, tinit = 0.0, ic=True):
     '''
     the ODE equation solver taylored to work with the annealing algorithm
     model: the model object
@@ -117,7 +117,7 @@ def annlodesolve(model, tfinal, envlist, params, useparams=None, tinit = 0.0, re
     abstol: absolute tolerance
     ic: reinitialize initial conditions to a value in params or useparams
     '''
-    (f, rhs_exprs, y, odesize, data, xout, yout, nsteps, cvode_mem, yzero) = envlist
+    (f, rhs_exprs, y, odesize, data, xout, yout, nsteps, cvode_mem, yzero, reltol, abstol) = envlist
 
     #set the initial values and params in each run
     #all parameters are used in annealing. initial conditions are not, here

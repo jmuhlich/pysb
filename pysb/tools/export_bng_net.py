@@ -13,7 +13,7 @@ from StringIO import StringIO
 def run(model):
     gen = BngGenerator(model)
     output = StringIO()
-    bng_filename = '%d_%d_temp.bngl' % (os.getpid(), random.randint(0, 10000))
+    bng_filename = '%d_%d_temp.bngl' % (os.getpid(), random.randint(1, 10000))
     net_filename = bng_filename.replace('.bngl', '.net')
     # FIXME this should be factored out in bng.py instead of copy+pasted
     try:
@@ -37,6 +37,7 @@ def run(model):
     finally:
         for filename in [bng_filename, net_filename]:
             if os.access(filename, os.F_OK):
+                #pass
                 os.unlink(filename)
     return output.getvalue()
 

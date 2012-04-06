@@ -101,11 +101,11 @@ def annlinit(model, reltol=1.0e-3, abstol=1.0e-3, nsteps = 1000, itermaxstep = N
     for i in range(0, odesize):
         yout[0][i] = y[i]
     
-    return [f, rhs_exprs, y, odesize, data, xout, yout, nsteps, cvode_mem, yzero], paramarray
+    return [f, rhs_exprs, y, odesize, data, xout, yout, nsteps, cvode_mem, yzero, reltol, abstol], paramarray
 
 
 # reltol of 1.0e-3, relative error of ~1%. abstol of 1.0e-2, enough for values that oscillate in the hundreds to thousands
-def annlodesolve(model, tfinal, envlist, params, useparams=None, tinit = 0.0, reltol=1.0e-3, abstol=1.0e-3, ic=True):
+def annlodesolve(model, tfinal, envlist, params, useparams=None, tinit = 0.0, ic=True):
     '''
     the ODE equation solver taylored to work with the annealing algorithm
     model: the model object
@@ -117,7 +117,7 @@ def annlodesolve(model, tfinal, envlist, params, useparams=None, tinit = 0.0, re
     abstol: absolute tolerance
     ic: reinitialize initial conditions to a value in params or useparams
     '''
-    (f, rhs_exprs, y, odesize, data, xout, yout, nsteps, cvode_mem, yzero) = envlist
+    (f, rhs_exprs, y, odesize, data, xout, yout, nsteps, cvode_mem, yzero, reltol, abstol) = envlist
 
     #set the initial values and params in each run
     #all parameters are used in annealing. initial conditions are not, here
@@ -190,32 +190,6 @@ def annlodesolve(model, tfinal, envlist, params, useparams=None, tinit = 0.0, re
     xyobs = numpy.vstack((xout, yobs))
 
     return (xyobs,xout,yout, yobs)
-
-def read_csv_array(xpfname):
-    """returns the first string and a numpy array from a csv set of data
-    xpfname is a string with the file name"""
-
-    #get the experimental data needed for annealing
-    fp = open(xpfname, "r")
-
-    reader = csv.reader(fp)
-    templist = []
-    #read in the lists
-    for row in reader:
-        templist.append(row)
-    #remove empty spaces
-    for i in range(0, len(templist)):
-        templist[i] = filter(None, templist[i])
-    headstring = templist.pop(0)
-    #Now put these into a numpy array, assume they are all floats
-    converters = tuple([float]*len(templist[0]))
-    darray = numpy.zeros((len(templist), len(templist[0])))
-    for i, item in enumerate(templist):
-        darray[i] = numpy.asarray(templist[i], dtype=darray.dtype)    
-   
-    #transpose to ease analysis
-    darray = darray.T
-    return (darray, headstring)
 
 def compare_data(xparray, simarray, xspairlist, vardata=False):
     """Compares two arrays of different size and returns the X^2 between them.
@@ -301,89 +275,84 @@ def compare_data(xparray, simarray, xspairlist, vardata=False):
     print "OBJOUT(total):", objout
     return objout
 
-def getgenparambounds(params, omag=1, N=1000., useparams=None, usemag=None, useN=None ):
-    # params must be a numpy array
-    # from: http://projects.scipy.org/scipy/ticket/1126
-    # The input-parameters "lower" and "upper" do not refer to global bounds of the
-    # parameters space but to 'maximum' displacements in the MC scheme AND
-    # in addition they determine the initial point!! 
-    # The initial value that you provide for the parameter vector seems to have no influence.
-    # This is how I call anneal with my desired functionality
-    # p=[a,b,c] #my initial values
-    # lb=array([a0,b0,c0]) #my lower bounds
-    # ub=array([a1,b1,c1]) #my upper bounds
-    # N=100 #determines the size of displacements
-    # dx=(ub-lb)/N #displacements
-    # lower=array(p)-dx/2 #the "lower bound" of the anneal routine
-    # upper=array(p)+dx/2 #the "upper bound" of the anneal routine
-    # f=lambda var: costfunction(p,lb,ub) #my cost function that is made very high if not lb < p < ub
-    # pbest=scipy.optimize.anneal(f,p,lower=lower,upper=upper)
-    # This ensures a MC search that starts of close to my initial value and makes steps of dx in its search.
+def getsobolarr(sobolarr, params, omag=1, N=1000., useparams=None, usemag=None, useN=None ):
+    # map a set of sobol pseudo-random numbers to a range for parameter evaluation
+    # sobol: sobol number array of the appropriate length
+    # params: array of parameters
+    # omag: order of magnitude over which params should be sampled
+    #
+
+    sobprmarr = numpy.zeros_like(sobolarr)
     if useparams is None:
         useparams = []
     ub = numpy.zeros(len(params))
     lb = numpy.zeros(len(params))
-    dx = numpy.zeros(len(params))
     # set upper/lower bounds for generic problem
     for i in range(len(params)):
         if i in useparams:
             ub[i] = params[i] * pow(10,usemag)
             lb[i] = params[i] / pow(10,usemag)
-            dx[i] = (ub[i] - lb[i])/useN
         else:
             ub[i] = params[i] * pow(10, omag)
             lb[i] = params[i] / pow(10, omag)
-            dx[i] = (ub[i] - lb[i])/N
-    #print dx
-    lower = params - dx/2
-    lower[numpy.where(lower<0.)] = 0.0 #make sure we don't go negative on parameters
-    upper = params + dx/2
+    
+    # sobprmarr = (sobolarr*(ub-lb)) + lb #map the [0..1] sobol array to the values for integration
+    #
+    # see  for more info http://en.wikipedia.org/wiki/Exponential_family
+    if len(sobprmarr.shape) == 1:
+        sobprmarr = lb*(ub/lb)**sobolarr # map the [0..1] sobol array to values sampled over their omags
+    elif len(sobprmarr.shape) == 2:
+        for i in range(sobprmarr.shape[0]):
+            sobprmarr[i] = lb*(ub/lb)**sobolarr[i]
+    else:
+        print "array shape not allowed... "
+        
 
-    return lb, ub, lower, upper
+    # sobprmarr is the N x len(params) array for sobol analysis
+    # lb is the lower bound of params
+    # ub is the upper bound of params
+    return sobprmarr
 
-def sobolfxn(params, useparams, time, model, envlist, xpdata, xspairlist, lb, ub, norm=False, vardata=False, fileobj=None):
-    ''' Feeder function for scipy.optimize.anneal
+
+def genCmtx(sobmtxA, sobmtxB):
+    """when passing the quasi-random sobol-treated A and B matrixes, this function iterates over all the possibilities
+    and returns the C matrix for simulations.
+    See e.g. Saltelli, Ratto, Andres, Campolongo, Cariboni, Gatelli, Saisana, Tarantola Global Sensitivity Analysis"""
+
+    nparams = sobmtxA.shape[1]
+
+    # allocate the space for the C matrix
+    sobmtxC = numpy.array([sobmtxB]*nparams) # shape 1 should be the number of params
+
+    # Now we have nparams copies of sobmtxB. replace the i_th column of sobmtxB with the i_th column of sobmtxA
+    for i in range(nparams):
+        sobmtxC[i,:,i] = sobmtxA[:,i]
+
+    return sobmtxC
+
+
+def sobolfxn(model, sobmtxA, sobmtxB, sobmtxC, time, envlist, xpdata, xspairlist, norm=False, vardata=False, fileobj=None):
+    ''' Sobolfxn calculates the yA, yB, and yC_i arrays needed for variance-based global sensitivity analysis
+    as prescribed by Saltelli and derived from the work by Sobol.
     '''
-    #annlout = scipy.optimize.anneal(pysb.anneal_sundials.annealfxn, paramarr, 
-    #                                args=(None, 20000, model, envlist, xpnormdata, 
-    #                                [(2,1),(4,2),(7,3)], lb, ub, True, True), 
-    #                                lower=lower, upper=upper, full_output=1)
-    # sample anneal call full model:
-    # params: parameters to be optimized
-    # lower,upper: arrays from get array function or something similar from getgenparambounds
-    # lb, ub: lower bound and upper bound for function from getgenparambounds
-    #
-    # sample anneal call, optimization of some parameters
-    #   annlout = scipy.optimize.anneal(pysb.anneal_sundials.annealfxn, smacprm, args=(smacnum, 25000, model, envlist, xpdata,
-    #            [(2,2), (3,3)], lower=lower, upper=upper, full_output=1)
-    #
-    # sample anneal call, optimization for ALL parameters
     # 
     #
 
-    if numpy.greater_equal(params, lb).all() and numpy.less_equal(params, ub).all():
-        print "Integrating..."
-        outlist = annlodesolve(model, time, envlist, params, useparams)
-        # specify that this is normalized data
-        if norm is True:
-            print "Normalizing data"
-            datamax = numpy.max(outlist[0], axis = 1)
-            datamin = numpy.min(outlist[0], axis = 1)
-            outlistnorm = ((outlist[0].T - datamin)/(datamax-datamin)).T
-            # xpdata[0] should be time, get from original array
-            outlistnorm[0] = outlist[0][0].copy()
-            # xpdata here is normalized, and so is outlistnorm
-            objout = compare_data(xpdata, outlistnorm, xspairlist, vardata)
-        else:
-            objout = compare_data(xpdata, outlist[0], xspairlist, vardata)
+    print "Integrating..."
+    outlist = annlodesolve(model, time, envlist, params, useparams)
+    # specify that this is normalized data
+    if norm is True:
+        print "Normalizing data"
+        datamax = numpy.max(outlist[0], axis = 1)
+        datamin = numpy.min(outlist[0], axis = 1)
+        outlistnorm = ((outlist[0].T - datamin)/(datamax-datamin)).T
+        # xpdata[0] should be time, get from original array
+        outlistnorm[0] = outlist[0][0].copy()
+        # xpdata here is normalized, and so is outlistnorm
+        objout = compare_data(xpdata, outlistnorm, xspairlist, vardata)
     else:
-        print "======>VALUE OUT OF BOUNDS NOTED"
-        temp = numpy.where((numpy.logical_and(numpy.greater_equal(params, lb), numpy.less_equal(params, ub)) * 1) == 0)
-        for i in temp:
-            print "======>",i, params[i]
-        objout = 1.0e300 # the largest FP in python is 1.0e308, otherwise it is just Inf
+        objout = compare_data(xpdata, outlist[0], xspairlist, vardata)
 
-    # save the params and temps for analysis
     if fileobj:
         if norm:
             writetofile(fileobj, params, outlistnorm, objout)
@@ -418,11 +387,3 @@ def writetofile(fout, simparms, simdata, temperature):
     return
 
 
-
-
-def mapranges():
-    ''' Map the range of numbers [0..1] from a sobol sequence to a given range [min..max] using the simple
-    formula min + (max - min) * sobolnum. Returns an array of values to be sampled to generate the sobol data
-    and use variance sensitivity analysis.'''
-    pass
-    

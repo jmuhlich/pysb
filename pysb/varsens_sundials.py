@@ -5,12 +5,19 @@ import re
 import ctypes
 import csv
 import scipy.interpolate
+import sys
 from pysundials import cvode
 
 # Thee set of functions set up the system for annealing runs
 # and provide the runner function as input to annealing
 
-def annlinit(model, reltol=1.0e-3, abstol=1.0e-3, nsteps = 1000, itermaxstep = None):
+def spinner(i):
+    spin = ("|", "/","-", "\\")
+    print "\r[%s] %d"%(spin[i%4],i),
+    sys.stdout.flush()
+
+# reltol of 1.0e-3, relative error of ~1%. abstol of 1.0e-3, enough for values that oscillate in the hundreds to thousands
+def odeinit(model, reltol=1.0e-3, abstol=1.0e-3, nsteps = 1000, itermaxstep = None):
     '''
     must be run to set up the environment for annealing with pysundials
     '''
@@ -20,8 +27,6 @@ def annlinit(model, reltol=1.0e-3, abstol=1.0e-3, nsteps = 1000, itermaxstep = N
     odesize = len(model.odes)
     
     # init the arrays we need
-    # FIXME don't need ydot!!! take 
-    #ydot = numpy.zeros(odesize) #dy/dt
     yzero = numpy.zeros(odesize)  #initial values for yzero
     
     # assign the initial conditions
@@ -56,28 +61,18 @@ def annlinit(model, reltol=1.0e-3, abstol=1.0e-3, nsteps = 1000, itermaxstep = N
     PUserData = ctypes.POINTER(UserData)
     data = UserData() 
 
-    #paramlist for annealing feeder function
-    #paramlist = []
-    #for i in range(0, numparams):
-    #    # notice: p[i] ~ model.parameters[i].name ~ model.parameters[i].value
-    #    data.p[i] = model.parameters[i].value
-    #    paramlist.append(model.parameters[i].value)
-    #paramarray = numpy.asarray(paramlist)
-
     data.p[:] = [p.value for p in model.parameters]
     paramarray = numpy.array([p.value for p in model.parameters])
     
-    # if no sensitivity analysis is needed allocate the "p" array as a 
-    # pointer array that can be called by sundials "f" as needed
+    # allocate the "p" array as a pointer array that can be called by sundials "f" as needed
     def f(t, y, ydot, f_data):
         data = ctypes.cast(f_data, PUserData).contents
         rhs_locals = {'y': y, 'p': data.p}
-        for i in range(0,len(model.odes)):
+        for i in range(0, len(model.odes)):
             ydot[i] = eval(rhs_exprs[i], rhs_locals)
         return 0
     
-    # CVODE STUFF
-    # initialize the cvode memory object, use BDF and Newton for stiff
+    # initialize the cvode memory object, use BDF and Newton for stiff systems
     cvode_mem = cvode.CVodeCreate(cvode.CV_BDF, cvode.CV_NEWTON)
     # allocate the cvode memory as needed, pass the function and the init ys
     cvode.CVodeMalloc(cvode_mem, f, 0.0, y, cvode.CV_SS, reltol, abstol)
@@ -104,10 +99,9 @@ def annlinit(model, reltol=1.0e-3, abstol=1.0e-3, nsteps = 1000, itermaxstep = N
     return [f, rhs_exprs, y, odesize, data, xout, yout, nsteps, cvode_mem, yzero, reltol, abstol], paramarray
 
 
-# reltol of 1.0e-3, relative error of ~1%. abstol of 1.0e-2, enough for values that oscillate in the hundreds to thousands
-def annlodesolve(model, tfinal, envlist, params, useparams=None, tinit = 0.0, ic=True):
+def odesolve(model, tfinal, envlist, params, useparams=None, tinit = 0.0, ic=True):
     '''
-    the ODE equation solver taylored to work with the annealing algorithm
+    the ODE equation solver tailored to work with the annealing algorithm
     model: the model object
     envlist: the list returned from annlinit
     params: the list of parameters that are being optimized with annealing 
@@ -130,13 +124,12 @@ def annlodesolve(model, tfinal, envlist, params, useparams=None, tinit = 0.0, ic
             #print "changing parameter", model.parameters[useparams[i]],"data.p", data.p[useparams[i]],"to", params[i]
             data.p[useparams[i]] = params[i]
 
+    # FIXME:
     # update yzero if initial conditions are being modified as part of the parameters
-    # did it this way b/c yzero and data.p may not always want to be modified at the same time
-    # FIXME: this is not the best way to do this.
+    # did it this way b/c yzero and data.p may not always be modified at the same time
     # the params list should NOT contain the initial conditions if they are not
     # to be used in the annealing... so this is a hack based on the fact that the
     # initial conditions are contained as part of the model.parameters list.
-    # FIXME
     #
     if ic is True:
         for cplxptrn, ic_param in model.initial_conditions:
@@ -183,9 +176,6 @@ def annlodesolve(model, tfinal, envlist, params, useparams=None, tinit = 0.0, ic
         factors, species = zip(*model.observable_groups[name])
         yobs[i] = (yout[:, species] * factors).sum(1)
 
-    #transpose yobs to make it easy to plot
-    #yobs.T
-
     #merge the x and y arrays for easy analysis
     xyobs = numpy.vstack((xout, yobs))
 
@@ -209,15 +199,13 @@ def compare_data(xparray, simarray, xspairlist, vardata=False):
     # This prob should figure out the overlap of the two arrays and 
     # get a spline of the overlap. For now just assume the simarray domain
     # is bigger than the xparray. FIXME FIXME FIXME
-    #
-    #rngmin = max(xparray[0].min(), simarray[0].min())
     #rngmax = min(xparray[0].max(), simarray[0].max())
     #rngmin = round(rngmin, -1)
     #rngmax = round(rngmax, -1)
     #print "Time overlap range:", rngmin,"to", rngmax
     
     ipsimarray = numpy.zeros(xparray.shape[1])
-    objout = 0
+    objout = []
    
     for i in range(len(xspairlist)):
         # create a b-spline of the sim data and fit it to desired range
@@ -250,9 +238,9 @@ def compare_data(xparray, simarray, xspairlist, vardata=False):
             #print "using XP VAR",xparrayaxis+1
             xparrayvar = xparray[xparrayaxis+1] # variance data provided in xparray in next column
         else:
-        # assume a default variance
+            # assume a default variance
             xparrayvar = numpy.ones(xparray.shape[1])
-            xparrayvar = xparray[xparrayaxis]*.341 # 1 stdev w/in 1 sigma of the experimental data... 
+            xparrayvar = xparray[xparrayaxis]*.1 # within 10%? FIXME: check w will about this
             xparrayvar = xparrayvar * xparrayvar
 
         xparrayvar = xparrayvar*2.0
@@ -269,11 +257,10 @@ def compare_data(xparray, simarray, xspairlist, vardata=False):
         #import code
         #code.interact(local=locals())
 
-        objout += objarray.sum()
-        print "OBJOUT(%d,%d):%f  OBJOUT(CUM):%f"%(xparrayaxis, simarrayaxis, objarray.sum(), objout)
-
-    print "OBJOUT(total):", objout
-    return objout
+        objout.append(objarray.sum())
+        #print "OBJOUT(%d,%d):%f  OBJOUT(CUM):%f"%(xparrayaxis, simarrayaxis, objarray.sum(), objout)
+    #print "OBJOUT(total):", objout
+    return numpy.asarray(objout)
 
 def getsobolarr(sobolarr, params, omag=1, N=1000., useparams=None, usemag=None, useN=None ):
     # map a set of sobol pseudo-random numbers to a range for parameter evaluation
@@ -331,27 +318,77 @@ def genCmtx(sobmtxA, sobmtxB):
     return sobmtxC
 
 
-def sobolfxn(model, sobmtxA, sobmtxB, sobmtxC, time, envlist, xpdata, xspairlist, norm=False, vardata=False, fileobj=None):
+def sobolfxn(model, sobmtxA, sobmtxB, sobmtxC, time, envlist, xpdata, xspairlist, ic=True, norm=False, vardata=False, useparams = None, relfileobj=None):
     ''' Sobolfxn calculates the yA, yB, and yC_i arrays needed for variance-based global sensitivity analysis
     as prescribed by Saltelli and derived from the work by Sobol.
     '''
     # 
     #
 
-    print "Integrating..."
-    outlist = annlodesolve(model, time, envlist, params, useparams)
+    # assign the arrays that will hold yA, yB and yC_n
+    yA = numpy.zeros([sobmtxA.shape[0]] + [len(model.observable_patterns)])
+    yB = numpy.zeros([sobmtxB.shape[0]] + [len(model.observable_patterns)])
+    yC = numpy.zeros(list(sobmtxC.shape[:2]) + [len(model.observable_patterns)]) # matrix is of shape (nparam, nsamples)
+
     # specify that this is normalized data
     if norm is True:
-        print "Normalizing data"
-        datamax = numpy.max(outlist[0], axis = 1)
-        datamin = numpy.min(outlist[0], axis = 1)
-        outlistnorm = ((outlist[0].T - datamin)/(datamax-datamin)).T
-        # xpdata[0] should be time, get from original array
-        outlistnorm[0] = outlist[0][0].copy()
-        # xpdata here is normalized, and so is outlistnorm
-        objout = compare_data(xpdata, outlistnorm, xspairlist, vardata)
+        # First process the A and B matrices
+        print "processing matrix A, %d iterations:", sobmtxA.shape[0]
+        for i in range(sobmtxA.shape[0]):
+            outlist = odesolve(model, time, envlist, sobmtxA[i], useparams, ic)
+            datamax = numpy.max(outlist[0], axis = 1)
+            datamin = numpy.min(outlist[0], axis = 1)
+            outlistnorm = ((outlist[0].T - datamin)/(datamax-datamin)).T
+            # xpdata[0] should be time, get from original array
+            outlistnorm[0] = outlist[0][0].copy()
+            yA[i] = compare_data(xpdata, outlistnorm, xspairlist, vardata)
+            spinner(i)
+
+        print "\nprocessing matrix B, %d iterations:", sobmtxB.shape[0]
+        for i in range(sobmtxB.shape[0]):
+            outlist = odesolve(model, time, envlist, sobmtxB[i], useparams, ic)
+            datamax = numpy.max(outlist[0], axis = 1)
+            datamin = numpy.min(outlist[0], axis = 1)
+            outlistnorm = ((outlist[0].T - datamin)/(datamax-datamin)).T
+            # xpdata[0] should be time, get from original array
+            outlistnorm[0] = outlist[0][0].copy()
+            yB[i] = compare_data(xpdata, outlistnorm, xspairlist, vardata)
+            spinner(i)
+
+        # now the C matrix, a bit more complicated b/c it is of size params x samples
+        print "\nprocessing matrix C_n, %d parameters:"%(sobmtxC.shape[0])
+        for i in range(sobmtxC.shape[0]):
+            print "\nprocessing processing parameter %d, %d iterations"%(i,sobmtxC.shape[1])
+            for j in range(sobmtxC.shape[1]):
+                outlist = odesolve(model, time, envlist, sobmtxC[i][j], useparams, ic)
+                datamax = numpy.max(outlist[0], axis = 1)
+                datamin = numpy.min(outlist[0], axis = 1)
+                outlistnorm = ((outlist[0].T - datamin)/(datamax-datamin)).T
+                # xpdata[0] should be time, get from original array
+                outlistnorm[0] = outlist[0][0].copy()
+                yC[i][j] = compare_data(xpdata, outlistnorm, xspairlist, vardata)
+                spinner(j)
     else:
-        objout = compare_data(xpdata, outlist[0], xspairlist, vardata)
+        # First process the A and B matrices
+        print "processing matrix A:"
+        for i in range(sobmtxA.shape[0]):
+            outlist = odesolve(model, time, envlist, sobmtxA[i], useparams, ic)
+            yA[i] = compare_data(xpdata, outlistnorm, xspairlist, vardata)
+            spinner(i)
+
+        print "processing matrix B:"
+        for i in range(sobmtxB.shape[0]):
+            outlist = odesolve(model, time, envlist, sobmtxB[i], useparams, ic)
+            yB[i] = compare_data(xpdata, outlistnorm, xspairlist, vardata)
+            spinner(i)
+
+        print "processing matrix C_n"
+        for i in range(sobmtxC.shape[0]):
+            print "processing processing parameter %d"%i
+            for j in range(sobmtxC.shape[1]):
+                outlist = odesolve(model, time, envlist, sobmtxC[i][j], useparams, ic)
+                yC[i][j] = compare_data(xpdata, outlistnorm, xspairlist, vardata)
+                spinner(j)
 
     if fileobj:
         if norm:
@@ -359,7 +396,7 @@ def sobolfxn(model, sobmtxA, sobmtxB, sobmtxC, time, envlist, xpdata, xspairlist
         else:
             writetofile(fileobj, params, outlist, objout)
     
-    return objout
+    return yA, yB, yC
 
 def writetofile(fout, simparms, simdata, temperature):
     imax, jmax = simdata.shape

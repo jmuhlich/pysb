@@ -318,7 +318,7 @@ def genCmtx(sobmtxA, sobmtxB):
     return sobmtxC
 
 
-def sobolfxn(model, sobmtxA, sobmtxB, sobmtxC, time, envlist, xpdata, xspairlist, ic=True, norm=False, vardata=False, useparams = None, relfileobj=None):
+def sobolfxn(model, sobmtxA, sobmtxB, sobmtxC, time, envlist, xpdata, xspairlist, ic=True, norm=False, vardata=False, useparams = None, fileobj=None):
     ''' Sobolfxn calculates the yA, yB, and yC_i arrays needed for variance-based global sensitivity analysis
     as prescribed by Saltelli and derived from the work by Sobol.
     '''
@@ -397,6 +397,41 @@ def sobolfxn(model, sobmtxA, sobmtxB, sobmtxC, time, envlist, xpdata, xspairlist
             writetofile(fileobj, params, outlist, objout)
     
     return yA, yB, yC
+
+def getvarsens(yA, yB, yC):
+    """Calculate the array of S_i and ST_i for each parameter given yA, yB, yC matrices
+    from the multi-sampling runs. Calculate S_i and ST_i as follows:
+
+
+           yA.yC_i - f_0^2
+     S_i = ---------------
+            yA.yA - f_0^2
+
+                  yB.yC_i - f_0^2
+     ST_i = 1 -  -----------------
+                   yA.yA - f_0^2
+
+    """
+    nparms = yc.shape[0]
+
+    # first get f_0^2, it only depends on yA. Notice this is an array of size n_observables
+    f02 = yA.mean(axis=0)
+    f02 *= f02
+
+    # now get the denominator term for yA
+    yAd = yA * yA
+    yAd = yAd.mean(axis=0)
+
+    #allocate the S_i and ST_i arrays
+    Sens  =  numpy.zeros_like(nparms)
+    SensT = numpy.zeros_like(nparms)
+
+    for i in range(nparms):
+        Sens[i] = ((yA * yC[i]).mean(axis=0) - f02)/(yAd - f02)
+    
+
+    
+    pass
 
 def writetofile(fout, simparms, simdata, temperature):
     imax, jmax = simdata.shape

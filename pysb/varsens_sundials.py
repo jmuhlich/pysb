@@ -244,7 +244,7 @@ def compare_data(xparray, simarray, xspairlist, vardata=False):
             xparrayvar = xparrayvar * xparrayvar
 
         xparrayvar = xparrayvar*2.0
-        #numpy.seterr(divide='ignore')
+        numpy.seterr(divide='ignore') # FIXME: added to remove the warnings... use caution!!
         objarray = diffsqarray / xparrayvar
 
         # check for inf in objarray, they creep up when there are near zero or zero values in xparrayvar

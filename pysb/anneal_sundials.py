@@ -296,7 +296,7 @@ def compare_data(xparray, simarray, xspairlist, vardata=False):
         #code.interact(local=locals())
 
         objout += objarray.sum()
-        print "OBJOUT(%d,%d):%f  OBJOUT(CUM):%f"%(xparrayaxis, simarrayaxis, objarray.sum(), objout)
+        print "OBJOUT(%d,%d):%f  |\t\tOBJOUT(CUM):%f"%(xparrayaxis, simarrayaxis, objarray.sum(), objout)
 
     print "OBJOUT(total):", objout
     return objout

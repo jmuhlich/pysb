@@ -262,7 +262,7 @@ def compare_data(xparray, simarray, xspairlist, vardata=False):
     #print "OBJOUT(total):", objout
     return numpy.asarray(objout)
 
-def getsobolarr(sobolarr, params, omag=1, N=1000., useparams=None, usemag=None, useN=None ):
+def getsobolarr(sobolarr, params, omag=1, useparams=None, usemag=None):
     # map a set of sobol pseudo-random numbers to a range for parameter evaluation
     # sobol: sobol number array of the appropriate length
     # params: array of parameters
@@ -311,14 +311,14 @@ def genCmtx(sobmtxA, sobmtxB):
     # allocate the space for the C matrix
     sobmtxC = numpy.array([sobmtxB]*nparams) # shape 1 should be the number of params
 
-    # Now we have nparams copies of sobmtxB. replace the i_th column of sobmtxB with the i_th column of sobmtxA
+    # Now we have nparams copies of sobmtxB. replace the i_th column of sobmtxC with the i_th column of sobmtxA
     for i in range(nparams):
         sobmtxC[i,:,i] = sobmtxA[:,i]
 
     return sobmtxC
 
 
-def sobolfxn(model, sobmtxA, sobmtxB, sobmtxC, time, envlist, xpdata, xspairlist, ic=True, norm=False, vardata=False, useparams = None, fileobj=None):
+def sobolfxn(model, sobmtxA, sobmtxB, sobmtxC, time, envlist, xpdata, xspairlist, ic=True, norm=True, vardata=False, useparams = None, fileobj=None):
     ''' Sobolfxn calculates the yA, yB, and yC_i arrays needed for variance-based global sensitivity analysis
     as prescribed by Saltelli and derived from the work by Sobol.
     '''
@@ -339,8 +339,7 @@ def sobolfxn(model, sobmtxA, sobmtxB, sobmtxC, time, envlist, xpdata, xspairlist
             datamax = numpy.max(outlist[0], axis = 1)
             datamin = numpy.min(outlist[0], axis = 1)
             outlistnorm = ((outlist[0].T - datamin)/(datamax-datamin)).T
-            # xpdata[0] should be time, get from original array
-            outlistnorm[0] = outlist[0][0].copy()
+            outlistnorm[0] = outlist[0][0].copy() # xpdata[0] replace time from original array
             yA[i] = compare_data(xpdata, outlistnorm, xspairlist, vardata)
             spinner(i)
 
@@ -373,7 +372,7 @@ def sobolfxn(model, sobmtxA, sobmtxB, sobmtxC, time, envlist, xpdata, xspairlist
         print "processing matrix A:"
         for i in range(sobmtxA.shape[0]):
             outlist = odesolve(model, time, envlist, sobmtxA[i], useparams, ic)
-            yA[i] = compare_data(xpdata, outlistnorm, xspairlist, vardata)
+            yA[i] = compare_data(xpdata, outlist[0], xspairlist, vardata)
             spinner(i)
 
         print "processing matrix B:"
@@ -412,7 +411,8 @@ def getvarsens(yA, yB, yC):
                    yA.yA - f_0^2
 
     """
-    nparms = yc.shape[0]
+    nparms = yC.shape[0]
+    nobs = yC.shape[-1]
 
     # first get f_0^2, it only depends on yA. Notice this is an array of size n_observables
     f02 = yA.mean(axis=0)
@@ -423,15 +423,16 @@ def getvarsens(yA, yB, yC):
     yAd = yAd.mean(axis=0)
 
     #allocate the S_i and ST_i arrays
-    Sens  =  numpy.zeros_like(nparms)
-    SensT = numpy.zeros_like(nparms)
+    Sens  =  numpy.zeros((nparms,nobs))
+    SensT = numpy.zeros((nparms,nobs))
 
+    
     for i in range(nparms):
         Sens[i] = ((yA * yC[i]).mean(axis=0) - f02)/(yAd - f02)
-    
+        SensT[i] = ((yB * yC[i]).mean(axis=0) - f02)/(yAd - f02)
 
-    
-    pass
+    return Sens, SensT
+        
 
 def writetofile(fout, simparms, simdata, temperature):
     imax, jmax = simdata.shape

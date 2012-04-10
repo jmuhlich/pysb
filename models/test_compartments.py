@@ -61,7 +61,7 @@ print egfr_endocytosis
 
 #####
 
-from pysb.integrate import odesolve
+from pysb.integrate_lsoda import odesolve
 from pylab import *
 
 t = linspace(0, 21600, 200)

@@ -262,7 +262,7 @@ def compare_data(xparray, simarray, xspairlist, vardata=False):
     #print "OBJOUT(total):", objout
     return numpy.asarray(objout)
 
-def getsobolarr(sobolarr, params, omag=1, useparams=None, usemag=None):
+def getlog(sobolarr, params, omag=1, useparams=None, usemag=None):
     # map a set of sobol pseudo-random numbers to a range for parameter evaluation
     # sobol: sobol number array of the appropriate length
     # params: array of parameters
@@ -291,6 +291,46 @@ def getsobolarr(sobolarr, params, omag=1, useparams=None, usemag=None):
     elif len(sobprmarr.shape) == 2:
         for i in range(sobprmarr.shape[0]):
             sobprmarr[i] = lb*(ub/lb)**sobolarr[i]
+    else:
+        print "array shape not allowed... "
+        
+
+    # sobprmarr is the N x len(params) array for sobol analysis
+    # lb is the lower bound of params
+    # ub is the upper bound of params
+    return sobprmarr
+
+def getlin(sobolarr, params, CV =.25, useparams=[], useCV=None):
+    """ map a set of sobol pseudo-random numbers to a range for parameter evaluation
+
+    sobol: sobol number array of the appropriate length
+    params: array of parameters
+    stdev: standard deviation for parameters, this assumes it is unknown for the sampling
+    
+    function maps the sobol (or any random) [0:1) array linearly to mean-2sigma < x < mean + 2sigma
+
+    CV is the coefficient of variance, CV = sigma/mean
+    """
+
+    sobprmarr = numpy.zeros_like(sobolarr)
+
+    ub = numpy.zeros(len(params))
+    lb = numpy.zeros(len(params))
+    # set upper/lower bounds for generic problem
+    for i in range(len(params)):
+        if i in useparams:
+            ub[i] = params[i] + params[i]*useCV
+            lb[i] = params[i] - params[i]*useCV
+        else:
+            ub[i] = params[i] + params[i]*CV
+            lb[i] = params[i] - params[i]*CV
+    
+    # sobprmarr = (sobolarr*(ub-lb)) + lb #map the [0..1] sobol array to the values for integration
+    if len(sobprmarr.shape) == 1:
+        sobprmarr = (sobolarr*(ub-lb)) + lb
+    elif len(sobprmarr.shape) == 2:
+        for i in range(sobprmarr.shape[0]):
+            sobprmarr[i] = (sobolarr[i]*(ub-lb)) + lb
     else:
         print "array shape not allowed... "
         

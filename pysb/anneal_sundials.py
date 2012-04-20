@@ -20,7 +20,6 @@ def annlinit(model, reltol=1.0e-7, abstol=1.0e-11, nsteps = 1000, itermaxstep = 
     odesize = len(model.odes)
     
     # init the arrays we need
-    ydot = numpy.zeros(odesize) #dy/dt
     yzero = numpy.zeros(odesize)  #initial values for yzero
     
     # assign the initial conditions
@@ -99,14 +98,25 @@ def annlinit(model, reltol=1.0e-7, abstol=1.0e-11, nsteps = 1000, itermaxstep = 
     #first step in yout
     for i in range(0, odesize):
         yout[0][i] = y[i]
-    
-    return [f, rhs_exprs, y, ydot, odesize, data, xout, yout, nsteps, cvode_mem, yzero], paramarray
+
+    # f: the function called by cvodes calls that returns dy
+    # rhs_exprs: the python expression for the right hand side (list of strings)
+    # y: a CVode NVector object with the initial values for all species
+    # odesize: the number of odes
+    # data: a ctypes data structure (for Sundials) containing the parameter values (floats)
+    # xout: the numpy array where the time values will be put
+    # yout: the numpy array where the integrated timeseries will be put
+    # nsteps: the number of time steps
+    # cvode_mem: cvode memory object defining the step method
+    # yzero: a numpy array of the initial conditions
+    # paramarray: a numpy array containing the parameter values (floats). (same contents as data, but different datatype)
+    return [f, rhs_exprs, y, odesize, data, xout, yout, nsteps, cvode_mem, yzero], paramarray
 
 
 # reltol of 1.0e-2, relative error of ~1%. abstol of 1.0e-2, enough for values that oscillate in the hundreds to thousands
 def annlodesolve(model, tfinal, envlist, params, useparams=None, tinit = 0.0, reltol=1.0e-2, abstol=1.0e-2, ic=False):
     '''
-    the ODE equation solver taylored to work with the annealing algorithm
+    the ODE equation solver tailored to work with the annealing algorithm
     model: the model object
     envlist: the list returned from annlinit
     params: the list of parameters that are being optimized with annealing 
@@ -116,17 +126,7 @@ def annlodesolve(model, tfinal, envlist, params, useparams=None, tinit = 0.0, re
     abstol: absolute tolerance
     ic: reinitialize initial conditions to a value in params or useparams
     '''
-    f = envlist[0]
-    rhs_exprs = envlist[1]
-    y = envlist[2]
-    ydot = envlist[3]
-    odesize = envlist[4]
-    data = envlist[5]
-    xout = envlist[6]
-    yout = envlist[7]
-    nsteps = envlist[8]
-    cvode_mem = envlist[9]
-    yzero = envlist[10]
+    (f, rhs_exprs, y, odesize, data, xout, yout, nsteps, cvode_mem, yzero) = envlist
 
     #set the initial values and params in each run
     #all parameters are used in annealing. initial conditions are not, here
@@ -152,7 +152,6 @@ def annlodesolve(model, tfinal, envlist, params, useparams=None, tinit = 0.0, re
             speci = model.get_species_index(cplxptrn)
             yzero[speci] = ic_param.value
             
-
     #reset initial concentrations
     y = cvode.NVector(yzero)
 
@@ -243,7 +242,7 @@ def compare_data(xparray, simarray, xspairlist, vardata=False):
     # FIXME FIXME FIXME FIXME
     # This prob should figure out the overlap of the two arrays and 
     # get a spline of the overlap. For now just assume the simarray domain
-    # is bigger than the xparray. FIXME FIXME FIXME
+    # is bigger than the xparray. FIXME FIXME FIXME FIXME 
     #
     #rngmin = max(xparray[0].min(), simarray[0].min())
     #rngmax = min(xparray[0].max(), simarray[0].max())
@@ -289,6 +288,10 @@ def compare_data(xparray, simarray, xspairlist, vardata=False):
             xparrayvar = numpy.ones(xparray.shape[1])
             xparrayvar = xparray[xparrayaxis]*.341 # 1 stdev w/in 1 sigma of the experimental data... 
             xparrayvar = xparrayvar * xparrayvar
+            # Remove any zeros in the variance array # FIXME
+            for i in range(0, len(xparrayvar)):
+                if (xparrayvar[i] == 0):
+                    xparrayvar[i] = 1
 
         xparrayvar = xparrayvar*2.0
         #numpy.seterr(divide='ignore')
@@ -310,26 +313,24 @@ def compare_data(xparray, simarray, xspairlist, vardata=False):
     print "OBJOUT(total):", objout
     return objout
 
-def getgenparambounds(params, omag=1, N=1000., useparams=None, usemag=None, useN=None ):
+def getgenparambounds(params, omag=1, N=1000., useparams=[], usemag=None, useN=None ):
     # params must be a numpy array
     # from: http://projects.scipy.org/scipy/ticket/1126
     # The input-parameters "lower" and "upper" do not refer to global bounds of the
-    # parameters space but to 'maximum' displacements in the MC scheme AND
+    # parameter space but to 'maximum' displacements in the MC scheme AND
     # in addition they determine the initial point!! 
     # The initial value that you provide for the parameter vector seems to have no influence.
     # This is how I call anneal with my desired functionality
     # p=[a,b,c] #my initial values
-    # lb=array([a0,b0,c0]) #my lower bounds
+    # lb=array([a0,b0,c0]) #my lower bounds (absolute values)
     # ub=array([a1,b1,c1]) #my upper bounds
-    # N=100 #determines the size of displacements
-    # dx=(ub-lb)/N #displacements
-    # lower=array(p)-dx/2 #the "lower bound" of the anneal routine
+    # N=100 #determines the size of displacements; the more N, the smaller steps and the longer time to convergence
+    # dx=(ub-lb)/N #displacements--you could get from ub to lb in N steps
+    # lower=array(p)-dx/2 #the "lower bound" of the anneal routine (upper and lower step bounds relative to the current values of p)
     # upper=array(p)+dx/2 #the "upper bound" of the anneal routine
     # f=lambda var: costfunction(p,lb,ub) #my cost function that is made very high if not lb < p < ub
     # pbest=scipy.optimize.anneal(f,p,lower=lower,upper=upper)
     # This ensures a MC search that starts of close to my initial value and makes steps of dx in its search.
-    if useparams is None:
-        useparams = []
     ub = numpy.zeros(len(params))
     lb = numpy.zeros(len(params))
     dx = numpy.zeros(len(params))
@@ -358,7 +359,7 @@ def annealfxn(params, useparams, time, model, envlist, xpdata, xspairlist, lb, u
     #                                [(2,1),(4,2),(7,3)], lb, ub, True, True), 
     #                                lower=lower, upper=upper, full_output=1)
     # sample anneal call full model:
-    # params: parameters to be optimized
+    # params: parameters to be optimized, at their values for the given annealing step
     # lower,upper: arrays from get array function or something similar from getgenparambounds
     # lb, ub: lower bound and upper bound for function from getgenparambounds
     #
@@ -393,6 +394,7 @@ def annealfxn(params, useparams, time, model, envlist, xpdata, xspairlist, lb, u
         objout = 1.0e300 # the largest FP in python is 1.0e308, otherwise it is just Inf
 
     # save the params and temps for analysis
+    # FIXME If a parameter is out of bounds, outlist and outlistnorm will be undefined and this will cause an error
     if fileobj:
         if norm:
             writetofile(fileobj, params, outlistnorm, objout)
@@ -405,20 +407,20 @@ def writetofile(fout, simparms, simdata, temperature):
     imax, jmax = simdata.shape
     nparms = len(simparms)
 
-    fout.write('# TEMPERATURE\n{}\n'.format(temperature))
-    fout.write('# PARAMETERS ({})\n'.format(len(simparms)))
+    fout.write('# TEMPERATURE\n{0}\n'.format(temperature))
+    fout.write('# PARAMETERS ({0})\n'.format(len(simparms)))
     for i in range(nparms):
-        fout.write('{}'.format(simparms[i]))
+        fout.write('{0}'.format(simparms[i]))
         if (i !=0 and i%5 == 0) or (i == nparms-1):
             fout.write('\n')
         else:
             fout.write(', ')
             
-    fout.write('# SIMDATA ({},{})\n'.format(imax, jmax))
+    fout.write('# SIMDATA ({0},{1})\n'.format(imax, jmax))
     for i in range(imax):
-        fout.write('# {}\n'.format(i))
+        fout.write('# {0}\n'.format(i))
         for j in range(jmax):
-            fout.write('{}'.format(simdata[i][j]))
+            fout.write('{0}'.format(simdata[i][j]))
             if (j != 0 and j%10 == 0) or (j == jmax-1):
                 fout.write('\n')
             else:

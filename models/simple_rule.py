@@ -33,20 +33,20 @@ Observe('Sub', Sub(b=None, state='i'))
 Observe('EnzSub', Enz(b=1)%Sub(b=1))
 Observe('Prod', Sub(b=None, state = 'a'))
 
-# generate initial conditions from _0 parameter naming convention
-# for m in model.monomers:
-#     ic_param = model.parameter('%s_0' % m.name)
-#     if ic_param is not None:
-#         sites = {}
-#         for s in m.sites:
-#             if s in m.site_states:
-#                 sites[s] = m.site_states[s][0]
-#             else:
-#                 sites[s] = None
-#         Initial(m(sites), ic_param)
+# # generate initial conditions from _0 parameter naming convention
+# # for m in model.monomers:
+# #     ic_param = model.parameter('%s_0' % m.name)
+# #     if ic_param is not None:
+# #         sites = {}
+# #         for s in m.sites:
+# #             if s in m.site_states:
+# #                 sites[s] = m.site_states[s][0]
+# #             else:
+# #                 sites[s] = None
+# #         Initial(m(sites), ic_param)
 
-if __name__ == '__main__':
-    from pysb.bng import generate_network_code
-    from pysb.tools.export_bng import run as run_export
-    print run_export(model)
+# if __name__ == '__main__':
+#     from pysb.bng import generate_network_code
+#     from pysb.tools.export_bng import run as run_export
+#     print run_export(model)
 

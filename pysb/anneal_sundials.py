@@ -10,7 +10,7 @@ from pysundials import cvode
 # These set of functions set up the system for annealing runs
 # and provide the runner function as input to annealing
 
-def annlinit(model, reltol=1.0e-7, abstol=1.0e-11, nsteps = 1000, itermaxstep = None):
+def annlinit(model, abstol=1.0e-3, reltol=1.0e-3, nsteps = 1000, itermaxstep = None):
     '''
     must be run to set up the environment for annealing with pysundials
     '''
@@ -110,11 +110,13 @@ def annlinit(model, reltol=1.0e-7, abstol=1.0e-11, nsteps = 1000, itermaxstep = 
     # cvode_mem: cvode memory object defining the step method
     # yzero: a numpy array of the initial conditions
     # paramarray: a numpy array containing the parameter values (floats). (same contents as data, but different datatype)
-    return [f, rhs_exprs, y, odesize, data, xout, yout, nsteps, cvode_mem, yzero], paramarray
+    # reltol: integrator relative tolerance (float)
+    # abstol: integrator absolute tolerance (float)
+    return [f, rhs_exprs, y, odesize, data, xout, yout, nsteps, cvode_mem, yzero, reltol, abstol], paramarray
 
 
-# reltol of 1.0e-2, relative error of ~1%. abstol of 1.0e-2, enough for values that oscillate in the hundreds to thousands
-def annlodesolve(model, tfinal, envlist, params, useparams=None, tinit = 0.0, reltol=1.0e-2, abstol=1.0e-2, ic=False):
+# reltol of 1.0e-3, relative error of ~1%. abstol of 1.0e-2, enough for values that oscillate in the hundreds to thousands
+def annlodesolve(model, tfinal, envlist, params, useparams=None, tinit = 0.0, ic=True):
     '''
     the ODE equation solver tailored to work with the annealing algorithm
     model: the model object
@@ -126,7 +128,7 @@ def annlodesolve(model, tfinal, envlist, params, useparams=None, tinit = 0.0, re
     abstol: absolute tolerance
     ic: reinitialize initial conditions to a value in params or useparams
     '''
-    (f, rhs_exprs, y, odesize, data, xout, yout, nsteps, cvode_mem, yzero) = envlist
+    (f, rhs_exprs, y, odesize, data, xout, yout, nsteps, cvode_mem, yzero, reltol, abstol) = envlist
 
     #set the initial values and params in each run
     #all parameters are used in annealing. initial conditions are not, here
@@ -308,7 +310,7 @@ def compare_data(xparray, simarray, xspairlist, vardata=False):
         #code.interact(local=locals())
 
         objout += objarray.sum()
-        print "OBJOUT(%d,%d):%f  OBJOUT(CUM):%f"%(xparrayaxis, simarrayaxis, objarray.sum(), objout)
+        print "OBJOUT(%d,%d):%f  |\t\tOBJOUT(CUM):%f"%(xparrayaxis, simarrayaxis, objarray.sum(), objout)
 
     print "OBJOUT(total):", objout
     return objout
@@ -427,6 +429,10 @@ def writetofile(fout, simparms, simdata, temperature):
                 fout.write(', ')
     fout.write('#-------------------------------------------------------------------------------------------------\n')
     return
+
+# FIXME
+# FIXME: THESE FUNCTIONS SHOULD PROBABLY NOT BE INCLUDED IN THE FINAL VERSION OF THE ANNEAL SUNDIALS FUNCTION
+# FIXME
 
 def tenninetycomp(outlistnorm, arglist, xpsamples=1.0):
     """ Determine Td and Ts. Td calculated at time when signal goes up to 10%.

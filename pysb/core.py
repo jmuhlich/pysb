@@ -79,8 +79,6 @@ class SelfExporter(object):
             SelfExporter.default_model.add_component(obj)
 
         # load obj into target namespace under obj.name
-        # FIXME if name already used, add_component will succeed since it's done first.
-        #   this whole thing needs to be rethought, really.
         if SelfExporter.target_globals.has_key(export_name):
             warnings.warn("'%s' already defined" % (export_name), SymbolExistsWarning, stacklevel)
         SelfExporter.target_globals[export_name] = obj
@@ -89,15 +87,22 @@ class SelfExporter(object):
 class Component(object):
     """The base class for all the things contained within a model."""
 
-    def __init__(self, name, __export=True):
+    def __init__(self, name, _export=True):
+        if not re.match(r'[_a-z][_a-z0-9]*\Z', name, re.IGNORECASE):
+            raise InvalidComponentNameError(name)
         self.name = name
-        if __export:
-            SelfExporter.export(self)
+        if _export:
+            try:
+                SelfExporter.export(self)
+            except ComponentDuplicateNameError as e:
+                # re-raise to hide the stack trace below this point -- it's irrelevant to the user
+                # and makes the error harder to understand
+                raise e
 
 
 class Model(object):
 
-    def __init__(self, name=None, __export=True):
+    def __init__(self, name=None, _export=True):
         self.name = name
         self.monomers = ComponentSet()
         self.compartments = ComponentSet()
@@ -105,10 +110,12 @@ class Model(object):
         self.rules = ComponentSet()
         self.species = []
         self.odes = []
+        self.reactions = []
+        self.reactions_bidirectional = []
         self.observable_patterns = []
         self.observable_groups = {}  # values are tuples of factor,speciesnumber
         self.initial_conditions = []
-        if __export:
+        if _export:
             SelfExporter.export(self)
 
     def reload(self):
@@ -141,6 +148,31 @@ class Model(object):
             components |= container
         return components
 
+    def parameters_rules(self):
+        """Returns a ComponentSet of the parameters used as rate constants in rules"""
+        # rate_reverse is None for irreversible rules, so we'll need to filter those out
+        cset = ComponentSet(p for r in self.rules for p in (r.rate_forward, r.rate_reverse)
+                            if p is not None)
+        # intersect with original parameter list to retain ordering
+        return self.parameters & cset
+
+    def parameters_initial_conditions(self):
+        """Returns a ComponentSet of the parameters used as initial conditions"""
+        cset = ComponentSet(ic[1] for ic in self.initial_conditions)
+        # intersect with original parameter list to retain ordering
+        return self.parameters & cset
+
+    def parameters_compartments(self):
+        """Returns a ComponentSet of the parameters used as compartment sizes"""
+        cset = ComponentSet(c.size for c in self.compartments)
+        # intersect with original parameter list to retain ordering
+        return self.parameters & cset
+
+    def parameters_unused(self):
+        """Returns a ComponentSet of the parameters not used in the model at all"""
+        cset_used = self.parameters_rules() | self.parameters_initial_conditions() | self.parameters_compartments()
+        return self.parameters - cset_used
+
     def add_component(self, other):
         # We have 4 containers for the 4 types of components. This code determines the right one
         # based on the class of the object being added.  It tries to be defensive against reasonable
@@ -166,7 +198,10 @@ class Model(object):
         if not isinstance(value, Parameter):
             raise Exception("Value must be a Parameter")
         if not complex_pattern.is_concrete():
-            raise Exception("Pattern must be concrete (all sites specified)")
+            raise Exception("Pattern must be concrete")
+        if any(complex_pattern.is_equivalent_to(other_cp) for other_cp, value in self.initial_conditions):
+            # FIXME until we get proper canonicalization this could produce false negatives
+            raise Exception("Duplicate initial condition")
         self.initial_conditions.append( (complex_pattern, value) )
 
     def get_species_index(self, complex_pattern):
@@ -187,12 +222,12 @@ class Monomer(Component):
     """The Monomer class creates monomers with the specified sites, state-sites, and compartment
     """
 
-    def __init__(self, name, sites=[], site_states={}, __export=True):
-        Component.__init__(self, name, __export)
+    def __init__(self, name, sites=[], site_states={}, _export=True):
+        Component.__init__(self, name, _export)
 
-        # convert single site string to list
-        if type(sites) == str:
-            sites = [sites]
+        # ensure sites is some kind of list (presumably of strings) but not a string itself
+        if not isinstance(sites, collections.Iterable) or isinstance(sites, basestring):
+            raise ValueError("sites must be a list of strings")
         
         # ensure no duplicate sites
         sites_seen = {}
@@ -212,7 +247,7 @@ class Monomer(Component):
         if invalid_sites:
             raise Exception("Non-string state values in site_states for sites: " + str(invalid_sites))
 
-        self.sites = sites
+        self.sites = list(sites)
         self.sites_dict = dict.fromkeys(sites)
         self.site_states = site_states
 
@@ -296,13 +331,27 @@ class MonomerPattern(object):
         self.compartment = compartment
 
     def is_concrete(self):
-        """Tests whether all sites and compartment are specified."""
+        """Return a bool indicating whether the pattern is 'concrete'.
+
+        'Concrete' means the pattern satisfies ALL of the following:
+        1. All sites have specified conditions
+        2. If the model uses compartments, the compartment is specified.
+
+        """
+        # 1.
+        sites_ok = self.is_site_concrete()
+        # 2.
+        # FIXME accessing the model via SelfExporter.default_model is a temporary hack - all model
+        #   components (Component subclasses?) need weak refs to their parent model.
+        compartment_ok = self.compartment is not None or not SelfExporter.default_model.compartments
+        return compartment_ok and sites_ok
+
+    def is_site_concrete(self):
+        """Return a bool indicating whether the pattern is 'site-concrete'.
+
+        'Site-concrete' means all sites have specified conditions."""
         # assume __init__ did a thorough enough job of error checking that this is is all we need to do
-        # FIXME accessing the model via SelfExporter.default_model is
-        #   a temporary hack - all model components (Component
-        #   subclasses?) need weak refs to their parent model.
-        return len(self.site_conditions) == len(self.monomer.sites) and \
-            (len(SelfExporter.default_model.compartments) == 0 or self.compartment is not None)
+        return len(self.site_conditions) == len(self.monomer.sites)
 
     def __call__(self, *args, **kwargs):
         """Build a new MonomerPattern with updated site conditions. Can be used
@@ -355,9 +404,9 @@ class MonomerPattern(object):
                 for k in self.monomer.sites
                 if self.site_conditions.has_key(k)
                 ])
-        if self.compartment is not None:
-            value += ', compartment=' + self.compartment.name
         value += ')'
+        if self.compartment is not None:
+            value += ' ** ' + self.compartment.name
         return value
 
 
@@ -376,9 +425,19 @@ class ComplexPattern(object):
         self.match_once = match_once
 
     def is_concrete(self):
-        """Tests whether all sites in all of monomer_patterns are specified."""
-        # FIXME should we also check that self.compartment is None? (BNG rules seem to dictate it)
-        return all(mp.is_concrete() for mp in self.monomer_patterns)
+        """Return a bool indicating whether the pattern is 'concrete'.
+
+        'Concrete' means the pattern satisfies ANY of the following:
+        1. All monomer patterns are concrete
+        2. The compartment is specified AND all monomer patterns are site-concrete
+
+        """
+        # 1.
+        mp_concrete_ok = all(mp.is_concrete() for mp in self.monomer_patterns)
+        # 2.
+        compartment_ok = self.compartment is not None and \
+            all(mp.is_site_concrete() for mp in self.monomer_patterns)
+        return mp_concrete_ok or compartment_ok
 
     def is_equivalent_to(self, other):
         """Checks for equality with another ComplexPattern"""
@@ -409,7 +468,13 @@ class ComplexPattern(object):
 
     def __mod__(self, other):
         if isinstance(other, MonomerPattern):
-            return ComplexPattern(self.monomer_patterns + [other], None, self.match_once)
+            return ComplexPattern(self.monomer_patterns + [other], self.compartment, self.match_once)
+        elif isinstance(other, ComplexPattern):
+            if self.compartment is not other.compartment:
+                raise ValueError("merged ComplexPatterns must specify the same compartment")
+            elif self.match_once != other.match_once:
+                raise ValueError("merged ComplexPatterns must have the same value of match_once")
+            return ComplexPattern(self.monomer_patterns + other.monomer_patterns, self.compartment, self.match_once)
         else:
             return NotImplemented
 
@@ -505,8 +570,8 @@ def as_reaction_pattern(v):
 
 class Parameter(Component):
 
-    def __init__(self, name, value=float('nan'), __export=True):
-        Component.__init__(self, name, __export)
+    def __init__(self, name, value=0.0, _export=True):
+        Component.__init__(self, name, _export)
         self.value = value
 
     def __repr__(self):
@@ -522,8 +587,8 @@ class Compartment(Component):
     example: Compartment('eCell', dimension=3, size=extraSize, parent=None)
     """
 
-    def __init__(self, name, parent=None, dimension=3, size=None, __export=True):
-        Component.__init__(self, name, __export)
+    def __init__(self, name, parent=None, dimension=3, size=None, _export=True):
+        Component.__init__(self, name, _export)
 
         if parent != None and isinstance(parent, Compartment) == False:
             raise Exception("parent must be a predefined Compartment or None")
@@ -546,8 +611,8 @@ class Rule(Component):
 
     def __init__(self, name, reaction_pattern_set, rate_forward, rate_reverse=None,
                  delete_molecules=False,
-                 __export=True):
-        Component.__init__(self, name, __export)
+                 _export=True):
+        Component.__init__(self, name, _export)
 
         # FIXME: This tuple thing is ugly (used to support >> and <> operators between ReactionPatterns).
         # This is how the reactant and product ReactionPatterns are passed, along with is_reversible.
@@ -604,14 +669,19 @@ class SymbolExistsWarning(UserWarning):
     """Issued by model component constructors when a name is reused."""
     pass
 
+class InvalidComponentNameError(ValueError):
+    """Issued by Component.__init__ when the given name is not valid."""
+    def __init__(self, name):
+        ValueError.__init__(self, "Not a valid component name: '%s'" % name)
 
 
-class ComponentSet(collections.MutableSet, collections.MutableMapping):
-    """A container for storing model Components. It behaves mostly like an ordered set, but
-    components can also be retrieved and deleted by name by using the [] operator (as in a dict
-    lookup)."""
-    # The implementation is based on a list instead of a linked list (as OrderedSet is), since the
-    # expected usage pattern is heavy on append and retrieve, and light on delete.
+
+class ComponentSet(collections.Set, collections.Mapping, collections.Sequence):
+    """An add-and-read-only container for storing model Components. It behaves mostly like an
+    ordered set, but components can also be retrieved by name *or* index by using the [] operator
+    (like a dict or list). Components may not be removed or replaced."""
+    # The implementation is based on a list instead of a linked list (as OrderedSet is), since we
+    # only allow add and retrieve, not delete.
 
     def __init__(self, iterable=[]):
         self._elements = []
@@ -622,34 +692,37 @@ class ComponentSet(collections.MutableSet, collections.MutableMapping):
     def __iter__(self):
         return iter(self._elements)
 
-    def __contains__(self, value):
-        # O(n) but not expected to be called much
-        return value in self._elements
+    def __contains__(self, c):
+        if not isinstance(c, Component):
+            raise TypeError("Can only work with Components, got a %s" % type(c))
+        return c.name in self._map and self[c.name] is c
 
     def __len__(self):
         return len(self._elements)
 
     def add(self, c):
-        if not isinstance(c, Component):
-            raise TypeError("Expected only Components, got a %s" % type(c))
-        if c.name not in self._map:
+        if c not in self:
+            if c.name in self._map:
+                raise ComponentDuplicateNameError("Tried to add a component with a duplicate name: %s" % c.name)
             self._elements.append(c)
             self._map[c.name] = c
 
-    def discard(self, c):
-        # TODO
-        raise NotImplementedError()
-
     def __getitem__(self, key):
-        return self._map[key]
+        # Must support both Sequence and Mapping behavior. This means stringified integer Mapping
+        # keys (like "0") are forbidden, but since all Component names must be valid Python
+        # identifiers, integers are ruled out anyway.
+        if isinstance(key, int) or isinstance(key, long):
+            return self._elements[key]
+        else:
+            return self._map[key]
 
-    def __delitem__(self, key):
-        # TODO
-        raise NotImplementedError()
-
-    def __setitem__(self, key, value):
-        # TODO
-        raise NotImplementedError()
+    def get(self, key, default=None):
+        if isinstance(key, (int, long)):
+            raise ValueError("Get is undefined for integer arguments, use [] instead")
+        try:
+            return self[key]
+        except KeyError:
+            return default
 
     def iterkeys(self):
         for c in self:
@@ -671,11 +744,34 @@ class ComponentSet(collections.MutableSet, collections.MutableMapping):
     def items(self):
         return zip(self.keys(), self)
 
+    # We reimplement this because collections.Set's __and__ mixin iterates over other, not
+    # self. That implementation ends up retaining the ordering of other, but we'd like to keep the
+    # ordering of self instead. We require other to be a ComponentSet too so we know it will support
+    # "in" efficiently.
+    def __and__(self, other):
+        if not isinstance(other, ComponentSet):
+            return collections.Set.__and__(self, other)
+        return ComponentSet(value for value in self if value in other)
+
+    def __rand__(self, other):
+        return self.__and__(other)
+
+    def __ror__(self, other):
+        return self.__or__(other)
+
+    def __rxor__(self, other):
+        return self.__xor__(other)
+
     def __repr__(self):
         return '{' + \
             ',\n '.join("'%s': %s" % t for t in self.iteritems()) + \
             '}'
 
+
+class ComponentDuplicateNameError(ValueError):
+    """Issued by ComponentSet.add when a component is added with the
+    same name as an existing one."""
+    pass
 
 
 def extract_site_conditions(*args, **kwargs):

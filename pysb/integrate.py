@@ -155,7 +155,7 @@ class Solver(object):
                 param_values = numpy.array(param_values)
         else:
             # create parameter vector from the values in the model
-            param_values = numpy.array([p.value for p in self.model.parameters])
+            param_values = numpy.array([float(p) for p in self.model.parameters])
 
         if y0 is not None:
             # accept vector of species amounts as an argument

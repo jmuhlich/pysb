@@ -12,7 +12,7 @@ from earm_1_0 import model
 Lsat = 6E4; 
 
 # relationship of ligand concentration in the model (in # molecules/cell) to actual TRAIL concentration (in ng/ml)
-Lfactor = model.parameters['L_0'].value / 50;
+Lfactor = float(model.parameters['L_0']) / 50;
 
 L_0_baseline = model.parameters['L_0'].value
 
@@ -56,6 +56,7 @@ def fig_4a():
     xlabel('TRAIL (ng/ml)'),
     a = gca()
     a.set_xscale('log')
+    print [type(x) for x in (min(Ls) / Lfactor, max(Ls) / Lfactor)]
     a.set_xlim((min(Ls) / Lfactor, max(Ls) / Lfactor))
     a.set_ylim((0, 1000))
 

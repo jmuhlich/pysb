@@ -14,9 +14,8 @@ Annotation(model, 'is', 'http://identifiers.org/biomodels.db/BIOMD0000000220')
 Annotation(model, 'isDescribedBy',
            'http://identifiers.org/doi/10.1371/journal.pbio.0060299')
 
-transloc = .01; # rate of translocation between the cytosolic and mitochondrial compartments
-
-v = .07; # mitochondria compartment volume/cell volume
+Parameter('transloc', .01) # rate of translocation between the cytosolic and mitochondrial compartments
+Parameter('v', .07) # mitochondria compartment volume/cell volume
 
 # Non-zero initial conditions (in molecules per cell):
 Parameter('L_0'        , 3000); # baseline level of ligand for most experiments (corresponding to 50 ng/ml SuperKiller TRAIL)

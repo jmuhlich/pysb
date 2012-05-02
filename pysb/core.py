@@ -7,6 +7,7 @@ import re
 import collections
 import weakref
 import copy
+import sympy
 
 
 def Initial(*args):
@@ -652,13 +653,15 @@ def build_rule_expression(reactant, product, is_reversible):
     return RuleExpression(reactant, product, is_reversible)
 
 
-class Parameter(Component):
+class Parameter(Component, sympy.Symbol):
 
     """
     Model component representing a named constant floating point number.
 
     Parameters are used as reaction rate constants, compartment volumes and
-    initial (boundary) conditions for species.
+    initial (boundary) conditions for species. Their values can be literal
+    floating point numbers or mathematical expressions involving other
+    parameters.
 
     Parameters
     ----------
@@ -675,8 +678,29 @@ class Parameter(Component):
         Component.__init__(self, name, _export)
         self.value = value
 
+    @property
+    def value(self):
+        return self._value
+
+    @value.setter
+    def value(self, v):
+        # coerce value into a sympy object
+        self._value = sympy.sympify(v)
+
+    def _eval_evalf(self, prec):
+        return self.value.evalf(prec)
+
+    def _value_repr(self):
+        """Return repr of value for use in self.__repr__."""
+        if isinstance(self.value, Parameter):
+            # special case this to show only the name
+            return self.value.name
+        else:
+            return repr(self.value)
+
     def __repr__(self):
-        return  '%s(%s, %s)' % (self.__class__.__name__, repr(self.name), repr(self.value))
+        return  '%s(%s, %s)' % (self.__class__.__name__, repr(self.name),
+                                self._value_repr())
 
 
 
@@ -1214,6 +1238,12 @@ class Model(object):
         return "<%s '%s' (monomers: %d, rules: %d, parameters: %d, compartments: %d) at 0x%x>" % \
             (self.__class__.__name__, self.name, len(self.monomers), len(self.rules),
              len(self.parameters), len(self.compartments), id(self))
+
+
+
+class Species(sympy.Symbol):
+    # FIXME: implement
+    pass
 
 
 

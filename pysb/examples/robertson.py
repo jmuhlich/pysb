@@ -70,7 +70,7 @@ if __name__ == '__main__':
     # ==========
     substitutions = {}
     # Map parameter symbols to their values
-    substitutions.update((p.name, p.value) for p in model.parameters)
+    substitutions.update((p.name, float(p)) for p in model.parameters)
     # Map species variables sI to yI+1, e.g. s0 -> y1
     substitutions.update(('s%d' % i, 'y%d' % (i+1))
                          for i in range(len(model.odes)))

@@ -1,6 +1,7 @@
 import inspect
 import warnings
 import pysb
+import sympy
 
 
 class BngGenerator(object):
@@ -31,7 +32,8 @@ class BngGenerator(object):
         self.__content += "begin parameters\n"
         max_length = max(len(p.name) for p in self.model.parameters)
         for p in self.model.parameters:
-            self.__content += ("  %-" + str(max_length) + "s   %e\n") % (p.name, p.value)
+            self.__content += ("  %-" + str(max_length) + "s   %s\n") \
+                % (p.name, sympy.printing.ccode(p.value))
         self.__content += "end parameters\n\n"
 
     def generate_compartments(self):

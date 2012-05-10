@@ -1242,8 +1242,17 @@ class Model(object):
 
 
 class Species(sympy.Symbol):
-    # FIXME: implement
-    pass
+
+    """
+    A specific chemical species, represented by a concrete ComplexPattern.
+    """
+
+    def __init__(self, index, complex_pattern):
+        self.index = index
+        self.complex_pattern = complex_pattern
+        if not complex_pattern.is_concrete():
+            raise Exception("Pattern must be concrete")
+        # FIXME should this be a sympy.Dummy, and if not then how should it be named?
 
 
 

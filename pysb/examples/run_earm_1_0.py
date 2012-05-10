@@ -56,7 +56,6 @@ def fig_4a():
     xlabel('TRAIL (ng/ml)'),
     a = gca()
     a.set_xscale('log')
-    print [type(x) for x in (min(Ls) / Lfactor, max(Ls) / Lfactor)]
     a.set_xlim((min(Ls) / Lfactor, max(Ls) / Lfactor))
     a.set_ylim((0, 1000))
 

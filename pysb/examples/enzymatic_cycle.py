@@ -37,8 +37,8 @@ Initial(S(c='c5'), S5_free0)    # S5 (free substrate in config 5)
 
 
 # free substrate (required for functional ratelaw)
-Observe('S2_free', S(c='c2'))
-Observe('S5_free', S(c='c5'))
+Observable('S2_free', S(c='c2'))
+Observable('S5_free', S(c='c5'))
 
 
 # TODO: make these functional rate laws work

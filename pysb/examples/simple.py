@@ -33,7 +33,7 @@ Rule('egf_binds_egfr', EGF(R=None) + EGFR(L=None) <> EGF(R=1) % EGFR(L=1), kp1, 
 
 
 # Species LR EGF(R!1).EGFR(L!1)
-Observe('Lbound', EGF(R=ANY))  # Molecules
+Observable('Lbound', EGF(R=ANY))  # Molecules
 
 
 if __name__ == '__main__':
@@ -43,5 +43,5 @@ if __name__ == '__main__':
     yrec = odesolve(model, t)
     y = yrec.view().reshape(len(yrec), len(yrec.dtype))
     plot(t, y)
-    legend(model.species + model.observable_patterns)
+    legend(model.species + model.observables.values())
     show()

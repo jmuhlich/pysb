@@ -3,8 +3,8 @@ import argparse
 import warnings
 from ply import lex, yacc;
 import re
-import pysb
 import pysb.core
+import pysb.export
 
 
 reserved_list = [
@@ -34,11 +34,15 @@ tokens = [
 
     'COMMA',
     'PLUS',
+    'ASTERISK',
     'EXCLAMATION',
     'AT',
     'QUESTION',
     'PERIOD',
     'COLON',
+    'DOLLAR',
+    'SLASH',
+    'EQUALS',
     'ARROW_REVERSIBLE',
     'ARROW_IRREVERSIBLE',
     'LPAREN',
@@ -53,12 +57,16 @@ tokens = [
 
 t_COMMA = r','
 t_PLUS = r'\+'
+t_ASTERISK = r'\*'
 t_EXCLAMATION = r'!'
 t_AT = r'@'
 t_QUESTION = r'\?'
 t_PERIOD = r'\.'
 t_COLON = r':'
-t_ARROW_IRREVERSIBLE = r'-->'
+t_DOLLAR = r'\$'
+t_SLASH = r'/'
+t_EQUALS = r'='
+t_ARROW_IRREVERSIBLE = r'->'
 t_ARROW_REVERSIBLE = r'<->'
 t_LPAREN = r'\('
 t_RPAREN = r'\)'
@@ -74,8 +82,8 @@ def t_STRING(t):
 
 # Define a rule so we can track line numbers
 def t_NL(t):
-    r'\n+'
-    t.lexer.lineno += len(t.value)
+    r'(\n|\r|\r\n)'
+    t.lexer.lineno += 1
     return t
 
 def t_FLOAT(t):
@@ -108,7 +116,10 @@ def t_SITE_STATE(t):
 
 # Match and ignore comments (# to end of line)
 def t_comment(t):
-    r'\#[^\n]*'
+    r'\#[^\n\r]*'
+
+def t_line_cont(t):
+    r'\\\s*(\n|\r|\r\n)'
 
 # A string containing ignored characters (spaces and tabs)
 t_ignore  = ' \t'
@@ -139,33 +150,11 @@ def comma_list_helper(p):
 
 def p_model(p):
     '''model : block_list'''
-    if len(p) == 6:
-        blocks = p[3]
-    elif len(p) == 2:
-        blocks = p[1]
-    model = pysb.Model(name='model', _export=False)
-    for block in blocks:
-        if block.name == 'parameter':
-            model.parameters = block.contents
-        elif block.name == 'molecule_type':
-            model.monomers = block.contents
-        elif block.name == 'observable':
-            model.observables = block.contents
-        elif block.name == 'species':
-            warnings.warn("species not supported")
-        elif block.name == 'reaction_rule':
-            model.rules = block.contents
-        elif block.name == 'reaction':
-            warnings.warn("reactions not supported")
-        elif block.name == 'group':
-            warnings.warn("groups not supported")
-    p[0] = model
+    p[0] = p.parser.pysb_model
 
 def p_block_list(p):
     '''block_list : block_list block
                   | block'''
-    list_helper(p)
-
 
 def p_block(p):
     '''block : substance_units
@@ -176,52 +165,38 @@ def p_block(p):
              | reactions_block
              | observables_block
              | block_empty'''
-    p[0] = p[1]
 
 def p_block_empty(p):
-    '''block_empty : BEGIN MODEL NL
-                   | END MODEL NL
-                   | NL'''
-    # no output - ignore
+    '''block_empty : BEGIN MODEL eol
+                   | END MODEL eol
+                   | eol'''
 
 def p_substance_units(p):
-    '''substance_units : SUBSTANCEUNITS LPAREN STRING RPAREN NL'''
-    # no output - ignore
+    '''substance_units : SUBSTANCEUNITS LPAREN STRING RPAREN eol'''
 
 def p_parameter_block(p):
-    'parameter_block : BEGIN PARAMETERS NL parameter_st_list END PARAMETERS NL'
-    components = pysb.core.ComponentSet(p[4])
-    p[0] = Block('parameter', components)
+    'parameter_block : BEGIN PARAMETERS eol parameter_st_list END PARAMETERS eol'
 
 def p_molecule_type_block(p):
-    'molecule_type_block : BEGIN MOLECULE TYPES NL molecule_type_st_list END MOLECULE TYPES NL'
-    components = pysb.core.ComponentSet(p[5])
-    p[0] = Block('molecule_type', components)
+    'molecule_type_block : BEGIN MOLECULE TYPES eol molecule_type_st_list END MOLECULE TYPES eol'
 
 def p_species_block(p):
-    '''species_block : BEGIN SPECIES NL END SPECIES NL
-                     | BEGIN SEED SPECIES NL END SEED SPECIES NL'''
-    p[0] = Block('species', [])
+    '''species_block : BEGIN SPECIES eol END SPECIES eol
+                     | BEGIN SEED SPECIES eol END SEED SPECIES eol'''
 
 def p_reaction_rules_block(p):
-    'reaction_rules_block : BEGIN REACTION RULES NL reaction_rule_st_list END REACTION RULES NL'
-    components = pysb.core.ComponentSet(p[5])
-    p[0] = Block('reaction_rule', components)
+    'reaction_rules_block : BEGIN REACTION RULES eol reaction_rule_st_list END REACTION RULES eol'
 
 def p_reactions_block(p):
-    'reactions_block : BEGIN REACTIONS NL END REACTIONS NL'
-    p[0] = Block('reaction', [])
+    'reactions_block : BEGIN REACTIONS eol END REACTIONS eol'
 
 def p_observables_block(p):
-    'observables_block : BEGIN OBSERVABLES NL END OBSERVABLES NL'
-    components = pysb.core.ComponentSet()
-    p[0] = Block('observable', components)
+    'observables_block : BEGIN OBSERVABLES eol END OBSERVABLES eol'
 
 
 def p_parameter_st_list(p):
     '''parameter_st_list : parameter_st_list parameter_st
-                         | parameter_st
-                         | NL'''
+                         | parameter_st'''
     list_helper(p)
 
 def p_parameter_st(p):
@@ -229,19 +204,19 @@ def p_parameter_st(p):
                     | parameter_dec'''
     if len(p) == 3:
         p[0] = p[2]
-    else:
+    elif len(p) == 2:
         p[0] = p[1]
 
 def p_parameter_dec(p):
-    '''parameter_dec : ID number NL'''
-    p[0] = pysb.Parameter(p[1], p[2], _export=False)
-    print '====>', p[0]
+    '''parameter_dec : ID number eol'''
+    parameter = pysb.core.Parameter(p[1], p[2], _export=False)
+    p.parser.pysb_model.add_component(parameter)
+    #print '====>', parameter
 
 
 def p_molecule_type_st_list(p):
     '''molecule_type_st_list : molecule_type_st_list molecule_type_st
-                             | molecule_type_st
-                             | NL'''
+                             | molecule_type_st'''
     list_helper(p)
 
 def p_molecule_type_st(p):
@@ -253,11 +228,12 @@ def p_molecule_type_st(p):
         p[0] = p[1]
 
 def p_molecule_type_dec(p):
-    '''molecule_type_dec : ID LPAREN site_def_list RPAREN NL'''
+    '''molecule_type_dec : ID LPAREN site_def_list RPAREN eol'''
     sites = [s[0] for s in p[3]]
     site_states = dict((k, v) for k, v in p[3] if v is not None)
-    p[0] = pysb.Monomer(p[1], sites, site_states, _export=False)
-    print '====>', p[0]
+    monomer = pysb.core.Monomer(p[1], sites, site_states, _export=False)
+    p.parser.pysb_model.add_component(monomer)
+    #print '====>', monomer
 
 def p_site_def_list(p):
     '''site_def_list : site_def_list COMMA site_def
@@ -281,18 +257,26 @@ def p_site_state_list(p):
 
 def p_reaction_rule_st_list(p):
     '''reaction_rule_st_list : reaction_rule_st_list reaction_rule_st
-                             | reaction_rule_st
-                             | NL'''
+                             | reaction_rule_st'''
     list_helper(p)
 
 def p_reaction_rule_st(p):
-    '''reaction_rule_st : ID rule_expression rule_rates NL'''
-    p[0] = pysb.Rule(p[1], p[2], *p[3], _export=False)
-    print '====>', p[0]
+    '''reaction_rule_st : ID COLON rule_expression rule_rates eol
+                        | rule_expression rule_rates eol'''
+    if len(p) == 4:
+        expr, rates = p[1], p[2]
+        num_rules = len(p.parser.pysb_model.rules)
+        name = 'Rule' + str(num_rules + 1)
+    elif len(p) == 6:
+        name, expr, rates = p[1], p[3], p[4]
+    rule = pysb.core.Rule(name, expr, *rates, _export=False)
+    p.parser.pysb_model.add_component(rule)
+    #print '====>', rule
 
 def p_rule_expression(p):
     '''rule_expression : rule_expression_reversible
                        | rule_expression_irreversible'''
+    p[0] = p[1]
 
 def p_rule_expression_reversible(p):
     '''rule_expression_reversible : reaction_pattern ARROW_REVERSIBLE reaction_pattern'''
@@ -307,25 +291,86 @@ def p_reaction_pattern(p):
                         | complex_pattern'''
     if len(p) == 2:
         p[0] = pysb.core.ReactionPattern([p[1]])
-    elif len(p) == 3:
-        p[0] = p[1] + p[2]
+    elif len(p) == 4:
+        p[0] = p[1] + p[3]
 
-# XXX 2012/03/22 continue here with complex_pattern 
+def p_complex_pattern(p):
+    '''complex_pattern : complex_pattern PERIOD monomer_pattern
+                       | monomer_pattern'''
+    if len(p) == 2:
+        p[0] = pysb.core.ComplexPattern([p[1]], None)
+    elif len(p) == 4:
+        p[0] = p[1] % p[3]
+
+def p_monomer_pattern(p):
+    '''monomer_pattern : ID LPAREN site_condition_list RPAREN'''
+    try:
+        monomer = p.parser.pysb_model.monomers[p[1]]
+    except KeyError:
+        import ipdb; ipdb.set_trace()
+        raise SyntaxError("Unknown molecule type: %s" % p[1])
+    p[0] = monomer(dict(p[3]))
+    
+
+def p_site_condition_list(p):
+    '''site_condition_list : site_condition_list COMMA site_condition
+                           | site_condition
+                           |'''
+    comma_list_helper(p)
+
+def p_site_condition(p):
+    '''site_condition : ID SITE_STATE bond
+                      | ID bond
+                      | ID SITE_STATE
+                      | ID'''
+    if len(p) == 2:
+        p[0] = (p[1], None)
+    elif len(p) == 3:
+        p[0] = (p[1], p[2])
+    elif len(p) == 4:
+        p[0] = (p[1], (p[2], p[3]))
+
+def p_bond(p):
+    '''bond : EXCLAMATION bond_state'''
+    p[0] = p[2]
+
+def p_bond_state(p):
+    '''bond_state : INTEGER
+                  | PLUS
+                  | QUESTION'''
+    if p[1] == '+':
+        p[0] = pysb.core.ANY
+    elif p[1] == '?':
+        p[0] = pysb.core.WILD
+    else:
+        p[0] = p[1]
+
 
 def p_rule_rates(p):
     '''rule_rates : ID COMMA ID
                   | ID'''
-    p[0] = p[1:]
+    if len(p) == 2:
+        names = [p[1]]
+    elif len(p) == 4:
+        names = [p[1], p[3]]
+    p[0] = [p.parser.pysb_model.parameters[name] for name in names]
 
 def p_number(p):
     '''number : FLOAT
               | INTEGER'''
     p[0] = p[1]
 
+# This was easier than making the NL regexp match multiple newlines. That would
+# have entailed properly counting line numbers in the face of CR vs. LF vs. CRLF
+# line endings.
+def p_eol(p):
+    '''eol : eol NL
+           | NL'''
+
 
 # Error rule for syntax errors
 def p_error(p):
-    print "Syntax error in input:"
+    print "Syntax error on line %d:" % p.lineno
     print p
 
 
@@ -354,6 +399,7 @@ class InvalidBlockNameError(ValueError):
 # Build the lexer and parser
 lexer = lex.lex()
 parser = yacc.yacc(write_tables=0)
+parser.pysb_model = pysb.core.Model(name='model', _export=False)
 
 
 def parse(*args, **kwargs):
@@ -361,23 +407,29 @@ def parse(*args, **kwargs):
 
 if __name__ == '__main__':
     ap = argparse.ArgumentParser()
-    ap.add_argument("-l", "--lexer", help="debug lexer", action='store_true')
-    ap.add_argument("-p", "--parser", help="debug parser", action='store_true')
+    ap.add_argument("-l", "--lexer", help="test lexer", action='store_true')
+    ap.add_argument("-p", "--parser", help="test parser", action='store_true')
+    ap.add_argument("-d", "--debug", help="debug output", action='store_true')
     ap.add_argument("bngl_file", nargs="?")
     args = ap.parse_args()
     if args.bngl_file is None:
         from pysb.examples.robertson import model
-        from pysb.export import export
-        content = export(model, 'bng_net')
+        content = pysb.export.export(model, 'bng_net')
     else:
         with open(args.bngl_file) as f:
             content = f.read()
+    logger = None
+    if args.debug:
+        logger = yacc.PlyLogger(sys.stdout)
     if args.lexer:
         lexer.input(content)
         for tok in lexer:
             print tok
     elif args.parser:
-        parser.parse(content, debug=yacc.PlyLogger(sys.stdout))
+        model = parser.parse(content, debug=logger)
+        content = pysb.export.export(model, 'bngl')
+        print "\n======================\n"
+        print content
     else:
         print "ERROR: Must specify -l or -p"
         ap.print_help()

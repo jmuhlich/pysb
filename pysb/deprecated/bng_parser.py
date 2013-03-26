@@ -181,8 +181,8 @@ def p_molecule_type_block(p):
     'molecule_type_block : BEGIN MOLECULE TYPES eol molecule_type_st_list END MOLECULE TYPES eol'
 
 def p_species_block(p):
-    '''species_block : BEGIN SPECIES eol END SPECIES eol
-                     | BEGIN SEED SPECIES eol END SEED SPECIES eol'''
+    '''species_block : BEGIN SPECIES eol species_st_list END SPECIES eol
+                     | BEGIN SEED SPECIES eol species_st_list END SEED SPECIES eol'''
 
 def p_reaction_rules_block(p):
     'reaction_rules_block : BEGIN REACTION RULES eol reaction_rule_st_list END REACTION RULES eol'
@@ -197,35 +197,24 @@ def p_observables_block(p):
 def p_parameter_st_list(p):
     '''parameter_st_list : parameter_st_list parameter_st
                          | parameter_st'''
-    list_helper(p)
 
 def p_parameter_st(p):
     '''parameter_st : INTEGER parameter_dec
                     | parameter_dec'''
-    if len(p) == 3:
-        p[0] = p[2]
-    elif len(p) == 2:
-        p[0] = p[1]
 
 def p_parameter_dec(p):
     '''parameter_dec : ID number eol'''
     parameter = pysb.core.Parameter(p[1], p[2], _export=False)
     p.parser.pysb_model.add_component(parameter)
-    #print '====>', parameter
 
 
 def p_molecule_type_st_list(p):
     '''molecule_type_st_list : molecule_type_st_list molecule_type_st
                              | molecule_type_st'''
-    list_helper(p)
 
 def p_molecule_type_st(p):
     '''molecule_type_st : INTEGER molecule_type_dec
                         | molecule_type_dec'''
-    if len(p) == 3:
-        p[0] = p[2]
-    else:
-        p[0] = p[1]
 
 def p_molecule_type_dec(p):
     '''molecule_type_dec : ID LPAREN site_def_list RPAREN eol'''
@@ -233,7 +222,6 @@ def p_molecule_type_dec(p):
     site_states = dict((k, v) for k, v in p[3] if v is not None)
     monomer = pysb.core.Monomer(p[1], sites, site_states, _export=False)
     p.parser.pysb_model.add_component(monomer)
-    #print '====>', monomer
 
 def p_site_def_list(p):
     '''site_def_list : site_def_list COMMA site_def
@@ -255,6 +243,32 @@ def p_site_state_list(p):
     list_helper(p)
 
 
+def p_species_st_list(p):
+    '''species_st_list : species_st_list species_st
+                       | species_st'''
+
+def p_species_st(p):
+    '''species_st : INTEGER species_dec
+                  | species_dec'''
+
+def p_species_dec(p):
+    '''species_dec : complex_pattern species_amount eol'''
+    if p[2] != 0:
+        try:
+            parameter = p.parser.pysb_model.parameters[p[2]]
+        except KeyError:
+            raise SyntaxError("Unknown parameter: %s" % p[2])
+        p.parser.pysb_model.initial(p[1], parameter)
+    p.parser.pysb_model.species.append(p[1])
+
+def p_species_amount(p):
+    '''species_amount : INTEGER
+                      | ID'''
+    if isinstance(p[1], int) and p[1] != 0:
+        raise SyntaxError("species amount must be a parameter name or 0")
+    p[0] = p[1]
+
+
 def p_reaction_rule_st_list(p):
     '''reaction_rule_st_list : reaction_rule_st_list reaction_rule_st
                              | reaction_rule_st'''
@@ -271,7 +285,6 @@ def p_reaction_rule_st(p):
         name, expr, rates = p[1], p[3], p[4]
     rule = pysb.core.Rule(name, expr, *rates, _export=False)
     p.parser.pysb_model.add_component(rule)
-    #print '====>', rule
 
 def p_rule_expression(p):
     '''rule_expression : rule_expression_reversible
@@ -307,7 +320,6 @@ def p_monomer_pattern(p):
     try:
         monomer = p.parser.pysb_model.monomers[p[1]]
     except KeyError:
-        import ipdb; ipdb.set_trace()
         raise SyntaxError("Unknown molecule type: %s" % p[1])
     p[0] = monomer(dict(p[3]))
     
@@ -330,6 +342,7 @@ def p_site_condition(p):
     elif len(p) == 4:
         p[0] = (p[1], (p[2], p[3]))
 
+# FIXME parse multi-bonds
 def p_bond(p):
     '''bond : EXCLAMATION bond_state'''
     p[0] = p[2]

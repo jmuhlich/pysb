@@ -674,6 +674,9 @@ class Parameter(Component, sympy.Symbol):
 
     """
 
+    def __new__(cls, name, value=0.0, _export=True):
+        return super(sympy.Symbol, cls).__new__(cls, name)
+
     def __init__(self, name, value=0.0, _export=True):
         Component.__init__(self, name, _export)
         self.value = value

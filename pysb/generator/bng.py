@@ -33,7 +33,7 @@ class BngGenerator(object):
         max_length = max(len(p.name) for p in self.model.parameters)
         for p in self.model.parameters:
             self.__content += ("  %-" + str(max_length) + "s   %s\n") \
-                % (p.name, sympy.printing.ccode(p.value))
+                % (p.name, sympy.printing.ccode(p.sym_expr))
         self.__content += "end parameters\n\n"
 
     def generate_compartments(self):

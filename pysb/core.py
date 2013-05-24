@@ -656,50 +656,85 @@ def build_rule_expression(reactant, product, is_reversible):
 class Parameter(Component, sympy.Symbol):
 
     """
-    Model component representing a named constant floating point number.
+    Model component representing a named numeric value.
 
     Parameters are used as reaction rate constants, compartment volumes and
-    initial (boundary) conditions for species. Their values can be literal
-    floating point numbers or mathematical expressions involving other
+    initial (boundary) conditions for species. A parameter's value can be a
+    simple number, or a mathematical expression involving numbers and other
     parameters.
 
     Parameters
     ----------
-    value : number, optional
-        The numerical value of the parameter. Defaults to 0.0 if not specified.
+    value : number or sympy.Expr, optional
+        The value of the parameter. Sympy expressions using other Parameters are
+        allowed. Defaults to 0.0 if not specified.
 
     Attributes
     ----------
-    Identical to Parameters (see above).
+    sym_expr : sympy.Expr
+        The symbolic representation of the parameter value. Even if the value
+        passed to the constructor was a plain Python number, `sym_value` will
+        hold a "sympified" representation such as a sympy.Float or
+        sympy.Integer.
+    value : float
+        Numeric value of the parameter, after full evaluation of any
+        expressions. May only be modified if the value originally set in the
+        constructor was a plain number.
 
     """
 
+    # We need to implement __new__ here just to harmonize with sympy.Symbol.
+    # Symbol's __new__ has a different signature from our __init__, so this is
+    # just here to smooth over that difference.
     def __new__(cls, name, value=0.0, _export=True):
         return super(sympy.Symbol, cls).__new__(cls, name)
 
     def __init__(self, name, value=0.0, _export=True):
         Component.__init__(self, name, _export)
-        self.value = value
+        # Coerce value into a sympy object.
+        self.set_sym_expr(value)
+
+    def set_sym_expr(self, value):
+        self.sym_expr = sympy.sympify(value)
+
+    def is_expr_numeric(self):
+        return isinstance(self.sym_expr, sympy.Number)
+
+    # The complexity of the 'value' property implementation is solely to support
+    # backwards compatibility with the original semantics of 'value' before the
+    # symbolic expression feature was introduced. 'value' was originally just a
+    # simple float that could be read and modified at will. The current
+    # implementation preserves that illusion for get and set on simple
+    # numeric-valued parameters, but only for get on expressions.
 
     @property
     def value(self):
-        return self._value
+        return float(self.sym_expr)
 
     @value.setter
     def value(self, v):
-        # coerce value into a sympy object
-        self._value = sympy.sympify(v)
+        # Prevent value changes if sym_expr is not a plain number.
+        if self.is_expr_numeric():
+            self.set_sym_expr(v)
+        else:
+            raise ParameterValueImmutableError(
+                "The value of parameter '%s' is a symbolic expression and thus "
+                "may not be modified." % self.name)
 
+    # Changes how sympy's .evalf works, which comes into play when casting
+    # Parameters into floats. float(param) will produce the expected literal
+    # numeric value for parameters whose values are expressions. The 'value'
+    # getter above depends on this!
     def _eval_evalf(self, prec):
-        return self.value.evalf(prec)
+        return self.sym_expr.evalf(prec)
 
     def _value_repr(self):
         """Return repr of value for use in self.__repr__."""
-        if isinstance(self.value, Parameter):
-            # special case this to show only the name
-            return self.value.name
+        if isinstance(self.sym_expr, Parameter):
+            # Special case this to show only the name.
+            return self.sym_expr.name
         else:
-            return repr(self.value)
+            return repr(self.sym_expr)
 
     def __repr__(self):
         return  '%s(%s, %s)' % (self.__class__.__name__, repr(self.name),
@@ -1288,6 +1323,9 @@ class InvalidComponentNameError(ValueError):
 
 class InvalidInitialConditionError(ValueError):
     """Invalid initial condition pattern."""
+
+class ParameterValueImmutableError(TypeError):
+    """Parameter value may not be changed."""
 
 
 class ComponentSet(collections.Set, collections.Mapping, collections.Sequence):

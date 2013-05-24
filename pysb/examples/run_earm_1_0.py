@@ -14,7 +14,7 @@ Lsat = 6E4;
 # relationship of ligand concentration in the model (in # molecules/cell) to actual TRAIL concentration (in ng/ml)
 Lfactor = float(model.parameters['L_0']) / 50;
 
-L_0_baseline = model.parameters['L_0'].value
+L_0_baseline = float(model.parameters['L_0'])
 
 
 def fig_4a():

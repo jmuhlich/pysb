@@ -503,29 +503,21 @@ class ComplexPattern(object):
         """
         return ComplexPattern([mp() for mp in self.monomer_patterns], self.compartment, self.match_once)
 
-    def __call__(self, **kwargs):
+    def __call__(self, conditions=None, **kwargs):
         """Build a new ComplexPattern with updated site conditions."""
 
-        # Ensure we don't have more than one of any Monomer in our patterns.
-        mp_monomer = lambda mp: mp.monomer
-        patterns_sorted = sorted(self.monomer_patterns, key=mp_monomer)
-        pgroups = itertools.groupby(patterns_sorted, mp_monomer)
-        pcounts = [(monomer, sum(1 for mp in mps)) for monomer, mps in pgroups]
-        dup_monomers = [monomer.name for monomer, count in pcounts if count > 1]
-        if dup_monomers:
-            raise DuplicateMonomerError("ComplexPattern has duplicate "
-                                        "Monomers: " + str(dup_monomers))
+        conditions = extract_site_conditions(conditions, **kwargs)
 
         # Ensure all specified sites are present in some Monomer.
         self_site_groups = (mp.monomer.sites for mp in self.monomer_patterns)
         self_sites = list(itertools.chain(*self_site_groups))
-        unknown_sites = set(kwargs).difference(self_sites)
+        unknown_sites = set(conditions).difference(self_sites)
         if unknown_sites:
             raise UnknownSiteError("Unknown sites in argument list: " +
                                    ", ".join(unknown_sites))
 
         # Ensure no specified site is present in multiple Monomers.
-        used_sites = [s for s in self_sites if s in kwargs]
+        used_sites = [s for s in self_sites if s in conditions]
         sgroups = itertools.groupby(sorted(used_sites))
         scounts = [(name, sum(1 for s in sites)) for name, sites in sgroups]
         dup_sites = [name for name, count in scounts if count > 1]
@@ -539,8 +531,8 @@ class ComplexPattern(object):
         site_map = {}
         for mp in cp.monomer_patterns:
             site_map.update(dict.fromkeys(mp.monomer.sites, mp))
-        # Apply kwargs to our ComplexPatterns.
-        for site, condition in kwargs.items():
+        # Apply conditions to our ComplexPatterns.
+        for site, condition in conditions.items():
             site_map[site].site_conditions[site] = condition
         return cp
 

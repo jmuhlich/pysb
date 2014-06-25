@@ -31,6 +31,18 @@ def test_monomer_model():
     ok_(A in model.all_components())
     ok_(A not in model.all_components() - model.monomers)
 
+@with_model
+def test_complexpattern_model():
+    Monomer('A', ['x'])
+    Monomer('B', ['y', 'z'], {'z': ['foo']})
+    Monomer('C', ['x'])
+    cp_ab = A(x=1) % B(y=1)
+    cp_aa = A(x=1) % A(x=1)
+    cp_ac = A(x=1) % C(x=1)
+    cp_ab(z='foo')
+    cp_aa()
+    assert_raises(UnknownSiteError, cp_ab, f=2)
+    assert_raises(DuplicateSiteError, cp_ac, x=2)
 
 @with_model
 def test_initial():

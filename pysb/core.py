@@ -209,7 +209,6 @@ class Monomer(Component):
 
     Notes
     -----
-
     A Monomer instance may be \"called\" like a function to produce a
     MonomerPattern, as syntactic sugar to approximate rule-based modeling
     language syntax. It is typically called with keyword arguments where the arg
@@ -250,6 +249,18 @@ class Monomer(Component):
         self.sites = list(sites)
         self.site_states = site_states
 
+    def as_pattern(self):
+        """Return an unrefined MonomerPattern for this Monomer."""
+        return MonomerPattern(self, None, None)
+
+    def refine(self, site, state):
+        """
+        Return a MonomerPattern for this Monomer, with one site refinement.
+
+        See MonomerPattern.refine for details.
+        """
+        return self.as_pattern().refine(site, state)
+
     def __call__(self, conditions=None, **kwargs):
         """
         Return a MonomerPattern object based on this Monomer.
@@ -264,7 +275,8 @@ class Monomer(Component):
             See MonomerPattern.site_conditions.
 
         """
-        return MonomerPattern(self, extract_site_conditions(conditions, **kwargs), None)
+        mp = MonomerPattern(self, None, None)
+        return mp(conditions, **kwargs)
 
     def __repr__(self):
         value = '%s(%s' % (self.__class__.__name__, repr(self.name))
@@ -285,9 +297,9 @@ class MonomerPattern(object):
     ----------
     monomer : Monomer
         The monomer to match.
-    site_conditions : dict
+    site_conditions : dict or None
         The desired state of the monomer's sites. Keys are site names and values
-        are described below in Notes.
+        are described below in Notes. None means all states will be matched.
     compartment : Compartment or None
         The desired compartment where the monomer should exist. None means
         \"don't-care\".
@@ -315,6 +327,10 @@ class MonomerPattern(object):
     """
 
     def __init__(self, monomer, site_conditions, compartment):
+        # Convert None to empty dict.
+        if site_conditions is None:
+            site_conditions = {}
+
         # ensure all keys in site_conditions are sites in monomer
         unknown_sites = [site for site in site_conditions.keys() if site not in monomer.sites]
         if unknown_sites:
@@ -351,6 +367,31 @@ class MonomerPattern(object):
         self.site_conditions = site_conditions
         self.compartment = compartment
 
+    def copy(self):
+        """
+        Return a shallow copy.
+
+        The new object will have references to the original monomer and
+        compartment, and a copy of site_conditions.
+        """
+        return MonomerPattern(self.monomer, self.site_conditions.copy(),
+                              self.compartment)
+
+    def refine(self, site, state):
+        """
+        Return a copy of this MonomerPattern, with one site refinement.
+
+        Parameters
+        ----------
+        site : string
+            Name of the site on this Monomer to refine.
+        state : various
+            See Notes for this class for allowable values.
+        """
+        copy = self.copy()
+        copy.site_conditions[site] = state
+        return copy
+
     def is_concrete(self):
         """
         Return a bool indicating whether the pattern is 'concrete'.
@@ -376,14 +417,25 @@ class MonomerPattern(object):
         return len(self.site_conditions) == len(self.monomer.sites)
 
     def __call__(self, conditions=None, **kwargs):
-        """Build a new MonomerPattern with updated site conditions. Can be used
-        to obtain a shallow copy by passing an empty argument list."""
+        """Build a new MonomerPattern with updated site conditions.
+
+        Guaranteed to return a distinct MonomerPattern object. Can be used to
+        obtain a shallow copy by passing an empty argument list."""
         # The new object will have references to the original monomer and
         # compartment, and a shallow copy of site_conditions which has been
         # updated according to our args (as in Monomer.__call__).
-        site_conditions = self.site_conditions.copy()
-        site_conditions.update(extract_site_conditions(conditions, **kwargs))
-        return MonomerPattern(self.monomer, site_conditions, self.compartment)
+        conditions = extract_site_conditions(conditions, **kwargs)
+        if conditions:
+            # There is at least one condition to iterate over, so we will
+            # definitely end up making a copy of self (with .refine) before
+            # returning.
+            mp = self
+            for site, state in conditions.items():
+                mp = mp.refine(site, state)
+        else:
+            # If the conditions list is empty, force the copy.
+            mp = self.copy()
+        return mp
 
     def __add__(self, other):
         if isinstance(other, MonomerPattern):
@@ -496,7 +548,7 @@ class ComplexPattern(object):
 
     def copy(self):
         """
-        Implement our own brand of shallow copy.
+        Return a shallow copy.
 
         The new object will have references to the original compartment, and
         copies of the monomer_patterns.

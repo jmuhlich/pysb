@@ -36,13 +36,26 @@ def test_complexpattern_model():
     Monomer('A', ['x'])
     Monomer('B', ['y', 'z'], {'z': ['foo']})
     Monomer('C', ['x'])
-    cp_ab = A(x=1) % B(y=1)
     cp_aa = A(x=1) % A(x=1)
+    cp_ab = A(x=1) % B(y=1)
     cp_ac = A(x=1) % C(x=1)
-    cp_ab(z='foo')
-    cp_aa()
+    cp_aa_2 = cp_aa()
+    cp_ab_z = cp_ab(z='foo')
+    ok_(cp_aa_2.is_equivalent_to(cp_aa))
+    ok_(cp_ab_z.is_equivalent_to(A(x=1) % B(y=1, z='foo')))
     assert_raises(UnknownSiteError, cp_ab, f=2)
     assert_raises(DuplicateSiteError, cp_ac, x=2)
+
+@with_model
+def test_complexpattern_refine():
+    Monomer('A', ['x', 'z'])
+    Monomer('B', ['y', 'z'], {'z': ['foo']})
+    Monomer('C', ['x'])
+    cp_aac = A(x=1) % A(x=1, z=2) % C(x=2)
+    cp_aac_r = cp_aac.refine('x', 3, A, 1)
+    ok_(cp_aac_r.is_equivalent_to(A(x=1) % A(x=3, z=2) % C(x=2)))
+    assert_raises(UnknownMonomerError, cp_aac.refine, 'x', 2, B)
+    assert_raises(DuplicateMonomerError, cp_aac.refine, 'x', 2, A)
 
 @with_model
 def test_initial():

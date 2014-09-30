@@ -419,8 +419,7 @@ class MonomerPattern(object):
     def __call__(self, conditions=None, **kwargs):
         """Build a new MonomerPattern with updated site conditions.
 
-        Guaranteed to return a distinct MonomerPattern object. Can be used to
-        obtain a shallow copy by passing an empty argument list."""
+        Guaranteed to return a distinct MonomerPattern object."""
         # The new object will have references to the original monomer and
         # compartment, and a shallow copy of site_conditions which has been
         # updated according to our args (as in Monomer.__call__).
@@ -493,7 +492,7 @@ class ComplexPattern(object):
 
     Parameters
     ----------
-    monomer_patterns : list of MonomerPatterns
+    monomer_patterns : single MonomerPattern, or list of MonomerPatterns
         MonomerPatterns that make up the complex.
     compartment : Compartment
         Location restriction. None means don't care.
@@ -510,6 +509,14 @@ class ComplexPattern(object):
     """
 
     def __init__(self, monomer_patterns, compartment, match_once=False):
+        # Normalize singleton monomer_patterns.
+        if isinstance(monomer_patterns, MonomerPattern):
+            monomer_patterns = [monomer_patterns]
+        # Verify all are MonomerPatterns.
+        if (not isinstance(monomer_patterns, collections.Sequence) or
+            not all(isinstance(mp, MonomerPattern) for mp in monomer_patterns)):
+            raise Exception("monomer_patterns must be a MonomerPattern or list "
+                            "of MonomerPatterns.")
         # ensure compartment is a Compartment
         if compartment and not isinstance(compartment, Compartment):
             raise Exception("compartment is not a Compartment object")
@@ -555,37 +562,84 @@ class ComplexPattern(object):
         """
         return ComplexPattern([mp() for mp in self.monomer_patterns], self.compartment, self.match_once)
 
+    def refine(self, site, state, monomer=None, index=None):
+        """
+        Return a copy of this ComplexPattern, with one site refinement.
+
+        Parameters
+        ----------
+        site : string
+            Name of the site to refine. Site must exist on a Monomer in our
+            monomer_patterns. Ambiguities can be resolved by use of the monomer
+            and index arguments (see below).
+        state : various
+            See Notes for MonomerPattern for allowable values.
+        monomer : Monomer, optional
+            If the given site is not unique within our monomer_patterns, this
+            argument must be used to specify the identity of the monomer whose
+            pattern is to be refined. If there is more than one MonomerPattern
+            for the same Monomer, the index argument is also required.
+        index : int, optional
+            If the monomer argument is required but there is still an ambiguity
+            due to more than one pattern for the same Monomer, this argument
+            must be used to specify which MonomerPattern to refine. An index of
+            0 corresponds to the left-most instance of a Monomer in the
+            ComplexPattern.
+        """
+        # TODO The 'index' option is not great. Can we do better?
+        site_mask = [site in mp.monomer.sites for mp in self.monomer_patterns]
+        num_site_hits = site_mask.count(True)
+        if num_site_hits == 0:
+            raise UnknownSiteError(
+                "Unknown site in ComplexPattern: {}".format(site))
+        elif num_site_hits == 1:
+            # TODO if monomer/index are passed, should they have to match?
+            # Select first pattern whose monomer contains 'site'.
+            mp_index = site_mask.index(True)
+        else:
+            if monomer is None:
+                raise DuplicateSiteError(
+                    "ComplexPattern has duplicate sites: {}".format(site))
+            else:
+                monomer_mask = [mp.monomer is monomer
+                                for mp in self.monomer_patterns]
+                num_monomer_hits = monomer_mask.count(True)
+                if num_monomer_hits == 0:
+                    raise(UnknownMonomerError(
+                            "Unknown monomer in ComplexPattern: {}".format(
+                                monomer.name)))
+                elif num_monomer_hits == 1:
+                    # Select first pattern whose monomer is 'monomer'.
+                    mp_index = monomer_mask.index(True)
+                else:
+                    if index is None:
+                        raise DuplicateMonomerError(
+                            "ComplexPattern has duplicate Monomers: {}".format(
+                                monomer.name))
+                    else:
+                        # Select index-th pattern whose monomer is 'monomer'.
+                        indices = [i for i, m in enumerate(monomer_mask) if m]
+                        mp_index = indices[index]
+        copy = self.copy()
+        mp = copy.monomer_patterns[mp_index]
+        copy.monomer_patterns[mp_index] = mp.refine(site, state)
+        return copy
+
     def __call__(self, conditions=None, **kwargs):
-        """Build a new ComplexPattern with updated site conditions."""
+        """Build a new ComplexPattern with updated site conditions.
 
+        Guaranteed to return a distinct ComplexPattern object."""
         conditions = extract_site_conditions(conditions, **kwargs)
-
-        # Ensure all specified sites are present in some Monomer.
-        self_site_groups = (mp.monomer.sites for mp in self.monomer_patterns)
-        self_sites = list(itertools.chain(*self_site_groups))
-        unknown_sites = set(conditions).difference(self_sites)
-        if unknown_sites:
-            raise UnknownSiteError("Unknown sites in argument list: " +
-                                   ", ".join(unknown_sites))
-
-        # Ensure no specified site is present in multiple Monomers.
-        used_sites = [s for s in self_sites if s in conditions]
-        sgroups = itertools.groupby(sorted(used_sites))
-        scounts = [(name, sum(1 for s in sites)) for name, sites in sgroups]
-        dup_sites = [name for name, count in scounts if count > 1]
-        if dup_sites:
-            raise DuplicateSiteError("ComplexPattern has duplicate sites: " +
-                                     str(dup_sites))
-
-        # Copy self so we can modify it in place before returning it.
-        cp = self.copy()
-        # Build map from site name to MonomerPattern.
-        site_map = {}
-        for mp in cp.monomer_patterns:
-            site_map.update(dict.fromkeys(mp.monomer.sites, mp))
-        # Apply conditions to our ComplexPatterns.
-        for site, condition in conditions.items():
-            site_map[site].site_conditions[site] = condition
+        if conditions:
+            # There is at least one condition to iterate over, so we will
+            # definitely end up making a copy of self (with .refine) before
+            # returning.
+            cp = self
+            for site, state in conditions.items():
+                cp = cp.refine(site, state)
+        else:
+            # If the conditions list is empty, force the copy.
+            cp = self.copy()
         return cp
 
 
@@ -1491,6 +1545,9 @@ class InvalidInitialConditionError(ValueError):
     """Invalid initial condition pattern."""
 
 class DuplicateMonomerError(ValueError):
+    pass
+
+class UnknownMonomerError(ValueError):
     pass
 
 class DuplicateSiteError(ValueError):

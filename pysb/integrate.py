@@ -37,8 +37,7 @@ default_integrator_options = {
         'nsteps': 2**31 - 1,
         },
     'cvode': {
-        'method': 'bdf',
-        'iteration': 'newton',
+        'old_api': False,
         },
     }
 
@@ -283,6 +282,16 @@ class Solver(object):
             # lsoda's arguments are in a different order to other integrators
             self.func = lambda t, y, p: rhs(y, t, p)
             self.jac_fn = lambda t, y, p: jacobian(y, t, p)
+        elif integrator == 'cvode':
+            import scikits.odes
+            # Adapt to scikits interfaces which take ydot/jac as an arg.
+            def rhs_scikits(t, y, ydot, p):
+                self.ydot = ydot
+                rhs(t, y, p)
+            if jac_fn:
+                raise ValueError("Jacobian fn not supported for cvode yet")
+            self.integrator = scikits.odes.ode('cvode', rhs_scikits,
+                                               **options)
         else:
             self.integrator = scipy.integrate.ode(rhs, jac=jac_fn)
             with warnings.catch_warnings():
@@ -364,6 +373,9 @@ class Solver(object):
             self.y = scipy.integrate.odeint(self.func, y0, self.tspan,
                                             Dfun=self.jac_fn,
                                             args=(param_values,), **self.opts)
+        elif 'scikits.odes.ode' in str(type(self.integrator)):
+            result = self.integrator.solve(self.tspan, y0)
+            print result
         else:
             # perform the actual integration
             self.integrator.set_initial_value(y0, self.tspan[0])

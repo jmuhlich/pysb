@@ -1146,6 +1146,10 @@ class Rule(Component):
         co-transport anything connected to that Monomer by a path in the same
         compartment. If False (default), connected Monomers will remain where
         they were.
+    energy : bool, optional
+        If True, this rule is an energy rule (as in Energy BNG) and the two
+        parameters are interpreted as the 'phi' and deltaG parameters of the
+        Arrhenius equation (see Hogg 2013 for details).
 
     Attributes
     ----------
@@ -1156,7 +1160,7 @@ class Rule(Component):
     """
 
     def __init__(self, name, rule_expression, rate_forward, rate_reverse=None,
-                 delete_molecules=False, move_connected=False,
+                 delete_molecules=False, move_connected=False, energy=False,
                  _export=True):
         Component.__init__(self, name, _export)
         if not isinstance(rule_expression, RuleExpression):
@@ -1172,6 +1176,7 @@ class Rule(Component):
         self.rate_reverse = rate_reverse
         self.delete_molecules = delete_molecules
         self.move_connected = move_connected
+        self.energy = energy
         # TODO: ensure all numbered sites are referenced exactly twice within each of reactants and products
 
     def is_synth(self):
@@ -1196,7 +1201,46 @@ class Rule(Component):
             ret += ', delete_molecules=True'
         if self.move_connected:
             ret += ', move_connected=True'
+        if self.energy:
+            ret += ', energy=True'
         ret += ')'
+        return ret
+
+
+class EnergyPattern(Component):
+
+    """
+    Model component representing an energy pattern.
+
+    Parameters
+    ----------
+    pattern : ComplexPattern
+        ComplexPattern describing the species to which the given deltaG in
+        `energy` should be attributed.
+    energy : sympy.Expr
+        Expression containing model parameters that defines the deltaG to be
+        ascribed to the part of a species matched by `pattern`.
+
+    Attributes
+    ----------
+
+    Identical to Parameters (see above).
+
+    """
+
+    def __init__(self, name, pattern, energy, _export=True):
+        Component.__init__(self, name, _export)
+        if not isinstance(pattern, ComplexPattern):
+            raise Exception("pattern is not a ComplexPattern object")
+        if not isinstance(energy, sympy.Expr):
+            raise Exception("energy is not a sympy.Expr object")
+        self.pattern = pattern
+        self.energy = energy
+
+    def __repr__(self):
+        ret = '%s(%s, %s, %s)' % \
+            (self.__class__.__name__, repr(self.name),
+             repr(self.pattern), repr(self.energy))
         return ret
 
 
@@ -1417,8 +1461,8 @@ class Model(object):
 
     """
 
-    _component_types = (Monomer, Compartment, Parameter, Rule, Observable,
-                        Expression)
+    _component_types = (Monomer, Compartment, Parameter, Rule, EnergyPattern,
+                        Observable, Expression)
 
     def __init__(self, name=None, base=None, _export=True):
         self.name = name
@@ -1428,6 +1472,7 @@ class Model(object):
         self.compartments = ComponentSet()
         self.parameters = ComponentSet()
         self.rules = ComponentSet()
+        self.energypatterns = ComponentSet()
         self.observables = ComponentSet()
         self.expressions = ComponentSet()
         self.initial_conditions = []
@@ -1746,6 +1791,7 @@ class Model(object):
         self.reactions = []
         self.reactions_bidirectional = []
         self._stoichiometry_matrix = None
+        self._extra_expressions = ComponentSet()
         for obs in self.observables:
             obs.species = []
             obs.coefficients = []

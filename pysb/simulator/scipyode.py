@@ -140,10 +140,10 @@ class ScipyOdeSimulator(Simulator):
         pysb.bng.generate_equations(self._model, self.cleanup, self.verbose)
 
         # ODE RHS -----------------------------------------------
-        self._eqn_subs = {e: e.expand_expr(expand_observables=True) for
-                          e in self._model.expressions}
+        expressions = self._model.expressions | self._model._extra_expressions
+        self._eqn_subs = {e: e.expand_expr(expand_observables=True)
+                          for e in expressions}
         ode_mat = sympy.Matrix(self.model.odes).subs(self._eqn_subs)
-
         self._test_inline()
 
         extra_compile_args = []

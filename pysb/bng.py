@@ -7,6 +7,7 @@ import subprocess
 import re
 import itertools
 import sympy
+from sympy.parsing.sympy_parser import parse_expr
 import numpy
 import tempfile
 import abc
@@ -719,6 +720,13 @@ def generate_equations(model, cleanup=True, verbose=False, **kwargs):
 def _parse_netfile(model, lines):
     """ Parse species, rxns and groups from a BNGL net file """
     try:
+        while 'begin parameters' not in next(lines):
+            pass
+        while True:
+            line = next(lines)
+            if 'end parameters' in line: break
+            _parse_parameter(model, line)
+
         while 'begin species' not in next(lines):
             pass
         model.species = []
@@ -752,6 +760,23 @@ def _parse_netfile(model, lines):
 
     except StopIteration as e:
         pass
+
+
+def _parse_parameter(model, line):
+    """Parse a 'parameter' line from a BNGL net file."""
+    # In general we don't need to re-read parameters and expressions as we have
+    # them in the model already, but in some cases BNG will add new entries here
+    # that we will need to reference when constructing the equation rate
+    # expressions.
+    index, name, value, comment = line.strip().split(None, 3)
+    if name in model.all_components().keys():
+        return
+    components = (model.parameters | model.expressions
+                  | model._extra_expressions | model.observables)
+    expr_namespace = {c.name: c for c in components}
+    sympy_expr = parse_expr(value.replace('^', '**'), local_dict=expr_namespace)
+    expression = pysb.core.Expression(name, sympy_expr)
+    model._extra_expressions.add(expression)
 
 
 def _parse_species(model, line):
@@ -820,7 +845,7 @@ def _parse_reaction(model, line, reaction_cache):
     is_reverse = tuple(bool(i) for i in is_reverse)
     r_names = ['__s%d' % r for r in reactants]
     rate_param = [model.parameters.get(r) or model.expressions.get(r) or
-                  float(r) for r in rate]
+                  model._extra_expressions.get(r) or float(r) for r in rate]
     combined_rate = sympy.Mul(*[sympy.S(t) for t in r_names + rate_param])
     reaction = {
         'reactants': reactants,

@@ -4,6 +4,8 @@ try:
     # weave is not available under Python 3.
     from weave import inline as weave_inline
     import weave.build_tools
+    import distutils.errors
+    import distutils.log
 except ImportError:
     weave_inline = None
 try:
@@ -11,7 +13,6 @@ try:
     from sympy.printing.theanocode import theano_function
 except ImportError:
     theano = None
-import distutils
 import pysb.bng
 import sympy
 import re
@@ -299,19 +300,23 @@ class ScipyOdeSimulator(Simulator):
         """
         if not hasattr(cls, '_use_inline'):
             cls._use_inline = False
-            try:
-                if weave_inline is not None:
-                    extra_compile_args = None
+            if weave_inline is not None:
+                old_info = distutils.log.info
+                try:
+                    extra_compile_args = []
                     if os.name == 'posix':
-                        extra_compile_args = ['2>/dev/null']
+                        extra_compile_args.append('2>/dev/null')
                     elif os.name == 'nt':
-                        extra_compile_args = ['2>NUL']
+                        extra_compile_args.append('2>NUL')
+                    distutils.log.info = distutils.log.debug
                     weave_inline('int i=0; i=i;', force=1,
                                  extra_compile_args=extra_compile_args)
                     cls._use_inline = True
-            except (weave.build_tools.CompileError,
-                    distutils.errors.CompileError, ImportError):
-                pass
+                except (weave.build_tools.CompileError,
+                        distutils.errors.CompileError, ImportError):
+                    pass
+                finally:
+                    distutils.log.info = old_info
 
     def _eqn_substitutions(self, eqns):
         """String substitutions on the sympy C code for the ODE RHS and

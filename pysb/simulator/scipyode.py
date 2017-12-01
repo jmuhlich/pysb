@@ -141,8 +141,12 @@ class ScipyOdeSimulator(Simulator):
 
         # ODE RHS -----------------------------------------------
         expressions = self._model.expressions | self._model._extra_expressions
-        self._eqn_subs = {e: e.expand_expr(expand_observables=True)
-                          for e in expressions}
+        param_subs = {p: sympy.Symbol(p.name) for p in self._model.parameters}
+        self._eqn_subs = {
+            sympy.Symbol(e.name): e.expand_expr(expand_observables=True).subs(param_subs)
+            for e in expressions
+        }
+        import pdb; pdb.set_trace()
         ode_mat = sympy.Matrix(self.model.odes).subs(self._eqn_subs)
         self._test_inline()
 

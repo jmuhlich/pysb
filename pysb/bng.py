@@ -844,9 +844,15 @@ def _parse_reaction(model, line, reaction_cache):
                                   for r in rule_list])
     is_reverse = tuple(bool(i) for i in is_reverse)
     r_names = ['__s%d' % r for r in reactants]
-    rate_param = [model.parameters.get(r) or model.expressions.get(r) or
-                  model._extra_expressions.get(r) or float(r) for r in rate]
-    combined_rate = sympy.Mul(*[sympy.S(t) for t in r_names + rate_param])
+    rate_param = [
+        sympy.Symbol(r) if (r in model.parameters._map
+                            or r in model.expressions._map
+                            or r in model._extra_expressions._map)
+        else sympy.Float(r)
+        for r in rate
+    ]
+    args = [sympy.Symbol(n) for n in r_names] + rate_param
+    combined_rate = sympy.Mul(*args)
     reaction = {
         'reactants': reactants,
         'products': products,

@@ -1801,7 +1801,6 @@ class Model(object):
         self.reactions = []
         self.reactions_bidirectional = []
         self._stoichiometry_matrix = None
-        self._extra_expressions = ComponentSet()
         for obs in self.observables:
             obs.species = []
             obs.coefficients = []

@@ -771,12 +771,11 @@ def _parse_parameter(model, line):
     index, name, value, comment = line.strip().split(None, 3)
     if name in model.all_components().keys():
         return
-    components = (model.parameters | model.expressions
-                  | model._extra_expressions | model.observables)
+    components = (model.parameters | model.expressions | model.observables)
     expr_namespace = {c.name: c for c in components}
     sympy_expr = parse_expr(value.replace('^', '**'), local_dict=expr_namespace)
-    expression = pysb.core.Expression(name, sympy_expr)
-    model._extra_expressions.add(expression)
+    expression = pysb.core.Expression(name, sympy_expr, _export=False)
+    model.expressions.add(expression)
 
 
 def _parse_species(model, line):
@@ -846,8 +845,7 @@ def _parse_reaction(model, line, reaction_cache):
     r_names = ['__s%d' % r for r in reactants]
     rate_param = [
         sympy.Symbol(r) if (r in model.parameters._map
-                            or r in model.expressions._map
-                            or r in model._extra_expressions._map)
+                            or r in model.expressions._map)
         else sympy.Float(r)
         for r in rate
     ]

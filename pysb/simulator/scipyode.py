@@ -140,14 +140,39 @@ class ScipyOdeSimulator(Simulator):
         pysb.bng.generate_equations(self._model, self.cleanup, self.verbose)
 
         # ODE RHS -----------------------------------------------
-        expressions = self._model.expressions | self._model._extra_expressions
-        param_subs = {p: sympy.Symbol(p.name) for p in self._model.parameters}
-        self._eqn_subs = {
-            sympy.Symbol(e.name): e.expand_expr(expand_observables=True).subs(param_subs)
-            for e in expressions
+        expr_dynamic = self._model.expressions_dynamic()
+        expr_constant = self._model.expressions_constant()
+        s_y = sympy.IndexedBase('__y', len(self._model.species))
+        s_p = sympy.IndexedBase('__p', len(self._model.parameters))
+        s_e = sympy.IndexedBase('__e', len(expr_constant))
+        species_subs = {
+            sympy.Symbol('__s%d' % i): s_y[i]
+            for i in range(len(self._model.species))
         }
-        import pdb; pdb.set_trace()
-        ode_mat = sympy.Matrix(self.model.odes).subs(self._eqn_subs)
+        param_subs = {
+            sympy.Symbol(p.name): s for p, s in zip(self._model.parameters, s_p)
+        }
+        param_subs.update(dict(zip(self._model.parameters, s_p)))
+        expr_dynamic_subs = {
+            sympy.Symbol(e.name): e.expand_expr(expand_observables=True)
+            for e in expr_dynamic
+        }
+        expr_constant_subs = {
+            sympy.Symbol(e.name): s for e, s in zip(expr_constant, s_e)
+        }
+        reaction_rates = [
+            r['rate']
+            .xreplace(expr_constant_subs).xreplace(expr_dynamic_subs)
+            .xreplace(param_subs).xreplace(species_subs)
+            for r in model.reactions
+        ]
+        self._calc_expr_constant = sympy.lambdify(
+            [s_p],
+            sympy.Matrix([
+                e.expand_expr().xreplace(param_subs) for e in expr_constant
+            ])
+        )
+
         self._test_inline()
 
         extra_compile_args = []
@@ -161,51 +186,50 @@ class ScipyOdeSimulator(Simulator):
 
         if self._use_inline and not use_theano:
             # Prepare the string representations of the RHS equations
-            code_eqs = '\n'.join(['ydot[%d] = %s;' %
-                                  (i, sympy.ccode(o))
-                                  for i, o in enumerate(ode_mat)])
-            code_eqs = str(self._eqn_substitutions(code_eqs))
+            code_eqs = '\n'.join(['v[%d] = %s;' % (i, sympy.ccode(r))
+                                  for i, r in enumerate(reaction_rates)])
+            code_eqs = code_eqs.replace('__', '')
 
-            for arr_name in ('ydot', 'y', 'p'):
+            for arr_name in ('v', 'y', 'p', 'e'):
                 macro = arr_name.upper() + '1'
                 code_eqs = re.sub(r'\b%s\[(\d+)\]' % arr_name,
                                   '%s(\\1)' % macro, code_eqs)
 
-            # Allocate ydot here, once.
+            # Allocate v and ydot here, once.
             ydot = np.zeros(len(self.model.species))
-            def rhs(t, y, p):
-                # note that the evaluated code sets ydot as a side effect
-                weave_inline(code_eqs, ['ydot', 't', 'y', 'p'],
+            v = np.zeros(len(self.model.reactions))
+            def rhs(t, y, p, e):
+                # Note that the C code sets v as a side effect
+                weave_inline(code_eqs, ['v', 't', 'y', 'p', 'e'],
                              extra_compile_args=extra_compile_args)
+                ydot[:] = self._model.stoichiometry_matrix.dot(v)
                 return ydot
 
             # Call rhs once just to trigger the weave C compilation step while
             # asserting control over distutils logging.
             with self._patch_distutils_logging:
-                rhs(0.0, self.initials[0], self.param_values[0])
+                rhs(0.0, self.initials[0], self.param_values[0],
+                    self._calc_expr_constant(self.param_values[0]))
 
         else:
-            self._symbols = sympy.symbols(','.join('__s%d' % sp_id for sp_id in
-                                                   range(len(
-                                                       self.model.species)))
-                                          + ',') + tuple(model.parameters)
-
             if use_theano:
+                raise NotImplementedError("work in progress")
                 if theano is None:
                     raise ImportError('Theano library is not installed')
 
                 code_eqs_py = theano_function(
-                    self._symbols,
+                    symbols,
                     [o if not o.is_zero else theano.tensor.zeros(1)
                      for o in ode_mat],
                     on_unused_input='ignore'
                 )
             else:
-                code_eqs_py = sympy.lambdify(self._symbols,
-                                             sympy.flatten(ode_mat))
+                rates_py = sympy.lambdify([s_y, s_p, s_e], reaction_rates)
 
-            def rhs(t, y, p):
-                return code_eqs_py(*itertools.chain(y, p))
+            def rhs(t, y, p, e):
+                v = rates_py(y, p, e)
+                ydot = self._model.stoichiometry_matrix.dot(v)
+                return ydot
 
         # JACOBIAN -----------------------------------------------
         # We'll keep the code for putting together the matrix in Sympy
@@ -213,13 +237,14 @@ class ScipyOdeSimulator(Simulator):
         # put together the sensitivity matrix)
         jac_fn = None
         if self._use_analytic_jacobian:
+            raise NotImplementedError("work in progress")
             species_symbols = [sympy.Symbol('__s%d' % i)
                                for i in range(len(self._model.species))]
             jac_matrix = ode_mat.jacobian(species_symbols)
 
             if use_theano:
                 jac_eqs_py = theano_function(
-                    self._symbols,
+                    symbols,
                     [j if not j.is_zero else theano.tensor.zeros(1)
                      for j in jac_matrix],
                     on_unused_input='ignore'
@@ -267,7 +292,7 @@ class ScipyOdeSimulator(Simulator):
                     jacobian(0.0, self.initials[0], self.param_values[0])
 
             else:
-                jac_eqs_py = sympy.lambdify(self._symbols, jac_matrix, "numpy")
+                jac_eqs_py = sympy.lambdify(symbols, jac_matrix, "numpy")
 
                 def jacobian(t, y, p):
                     return jac_eqs_py(*itertools.chain(y, p))
@@ -397,8 +422,10 @@ class ScipyOdeSimulator(Simulator):
             else:
                 self.integrator.set_initial_value(self.initials[n],
                                                   self.tspan[0])
-                # Set parameter vectors for RHS func and Jacobian
-                self.integrator.set_f_params(self.param_values[n])
+                # Set parameter and constant expression vectors for callbacks.
+                p = self.param_values[n]
+                e = self._calc_expr_constant(p)
+                self.integrator.set_f_params(p, e)
                 if self._use_analytic_jacobian:
                     self.integrator.set_jac_params(self.param_values[n])
                 trajectories[n][0] = self.initials[n]

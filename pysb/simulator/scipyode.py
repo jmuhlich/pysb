@@ -168,7 +168,7 @@ class ScipyOdeSimulator(Simulator):
         ]
         self._calc_expr_constant = sympy.lambdify(
             [s_p],
-            sympy.Matrix([
+            sympy.flatten([
                 e.expand_expr().xreplace(param_subs) for e in expr_constant
             ])
         )
@@ -424,7 +424,7 @@ class ScipyOdeSimulator(Simulator):
                                                   self.tspan[0])
                 # Set parameter and constant expression vectors for callbacks.
                 p = self.param_values[n]
-                e = self._calc_expr_constant(p)
+                e = np.array(self._calc_expr_constant(p))
                 self.integrator.set_f_params(p, e)
                 if self._use_analytic_jacobian:
                     self.integrator.set_jac_params(self.param_values[n])

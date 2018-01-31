@@ -154,17 +154,20 @@ class ScipyOdeSimulator(Simulator):
         }
         param_subs.update(dict(zip(self._model.parameters, s_p)))
         expr_dynamic_subs = {
-            sympy.Symbol(e.name): e.expand_expr(expand_observables=True)
-            for e in expr_dynamic
+            sympy.Symbol(e.name): sympy.Symbol('__d%d' % i)
+            for i, e in enumerate(expr_dynamic)
         }
         expr_constant_subs = {
             sympy.Symbol(e.name): s for e, s in zip(expr_constant, s_e)
         }
-        reaction_rates = [
-            r['rate']
-            .xreplace(expr_constant_subs).xreplace(expr_dynamic_subs)
+        replace_all = lambda e: (
+            e.xreplace(expr_constant_subs).xreplace(expr_dynamic_subs)
             .xreplace(param_subs).xreplace(species_subs)
-            for r in model.reactions
+        )
+        reaction_rates = [replace_all(r['rate']) for r in model.reactions]
+        dynamic_expressions = [
+            replace_all(e.expand_expr(expand_observables=True))
+            for e in expr_dynamic
         ]
         self._calc_expr_constant = sympy.lambdify(
             [s_p],
@@ -185,10 +188,13 @@ class ScipyOdeSimulator(Simulator):
             extra_compile_args.append('-w')
 
         if self._use_inline and not use_theano:
-            # Prepare the string representations of the RHS equations
-            code_eqs = '\n'.join(['v[%d] = %s;' % (i, sympy.ccode(r))
-                                  for i, r in enumerate(reaction_rates)])
-            code_eqs = code_eqs.replace('__', '')
+            # Prepare the string representations of the dynamic expressions and
+            # RHS equations.
+            de_eqs = '\n'.join(['double d%i = %s;' % (i, sympy.ccode(e))
+                                for i, e in enumerate(dynamic_expressions)])
+            rr_eqs = '\n'.join(['v[%d] = %s;' % (i, sympy.ccode(r))
+                                for i, r in enumerate(reaction_rates)])
+            code_eqs = '\n'.join([de_eqs, rr_eqs]).replace('__', '')
 
             for arr_name in ('v', 'y', 'p', 'e'):
                 macro = arr_name.upper() + '1'
@@ -209,7 +215,7 @@ class ScipyOdeSimulator(Simulator):
             # asserting control over distutils logging.
             with self._patch_distutils_logging:
                 rhs(0.0, self.initials[0], self.param_values[0],
-                    self._calc_expr_constant(self.param_values[0]))
+                    np.array(self._calc_expr_constant(self.param_values[0])))
 
         else:
             if use_theano:
@@ -224,10 +230,15 @@ class ScipyOdeSimulator(Simulator):
                     on_unused_input='ignore'
                 )
             else:
-                rates_py = sympy.lambdify([s_y, s_p, s_e], reaction_rates)
+                de_syms = [sympy.Symbol('__d%d' % i)
+                           for i in range(len(expr_dynamic))]
+                de_py = sympy.lambdify([s_y, s_p, s_e], dynamic_expressions)
+                rates_py = sympy.lambdify([s_y, s_p, s_e] + de_syms,
+                                          reaction_rates)
 
             def rhs(t, y, p, e):
-                v = rates_py(y, p, e)
+                d = de_py(y, p, e)
+                v = rates_py(y, p, e, *d)
                 ydot = self._model.stoichiometry_matrix.dot(v)
                 return ydot
 

@@ -1,19 +1,18 @@
 from pysb.simulator.base import Simulator, SimulatorException, SimulationResult
 import scipy.integrate
 try:
-    # weave is not available under Python 3.
-    from weave import inline as weave_inline
-    import weave.build_tools
+    from cython import inline as cython_inline
     import distutils.errors
 except ImportError:
-    weave_inline = None
-try:
-    import theano.tensor
-    from sympy.printing.theanocode import theano_function
-except ImportError:
-    theano = None
+    cython_inline = None
+# try:
+#     import theano.tensor
+#     from sympy.printing.theanocode import theano_function
+# except ImportError:
+#     theano = None
 import pysb.bng
 import sympy
+from sympy.printing.lambdarepr import lambdarepr
 import re
 import numpy as np
 import warnings
@@ -23,6 +22,19 @@ import logging
 import itertools
 import contextlib
 import importlib
+
+CYTHON_DIRECTIVES = {
+    'boundscheck': False,
+    'wraparound': False,
+    'nonecheck': False,
+    'initializedcheck': False,
+}
+CYTHON_PRE = '\n'.join(
+    ['cimport cython']
+    + ['@cython.%s(%s)' % (d, v) for d, v in CYTHON_DIRECTIVES.items()]
+    + ['\ndef calc():']
+)
+CYTHON_POST = 'calc()'
 
 
 class ScipyOdeSimulator(Simulator):
@@ -179,7 +191,7 @@ class ScipyOdeSimulator(Simulator):
         self._test_inline()
 
         extra_compile_args = []
-        # Inhibit weave C compiler warnings unless log level <= EXTENDED_DEBUG.
+        # Inhibit cython C compiler warnings unless log level <= EXTENDED_DEBUG.
         # Note that since the output goes straight to stderr rather than via the
         # logging system, the threshold must be lower than DEBUG or else the
         # Nose logcapture plugin will cause the warnings to be shown and tests
@@ -190,24 +202,26 @@ class ScipyOdeSimulator(Simulator):
         if self._use_inline and not use_theano:
             # Prepare the string representations of the dynamic expressions and
             # RHS equations.
-            de_eqs = '\n'.join(['double d%i = %s;' % (i, sympy.ccode(e))
+            cdef_code = '\n'.join(['cdef double[:] __{0} = {0}'.format(n)
+                                   for n in 'v', 'y', 'p', 'e'])
+            de_eqs = '\n'.join(['  __d{0} = {1};'.format(i, lambdarepr(e))
                                 for i, e in enumerate(dynamic_expressions)])
-            rr_eqs = '\n'.join(['v[%d] = %s;' % (i, sympy.ccode(r))
+            rr_eqs = '\n'.join(['  __v[%d] = %s;' % (i, lambdarepr(r))
                                 for i, r in enumerate(reaction_rates)])
-            code_eqs = '\n'.join([de_eqs, rr_eqs]).replace('__', '')
+            code_eqs = '\n'.join([cdef_code, CYTHON_PRE, de_eqs, rr_eqs,
+                                  CYTHON_POST])
 
-            for arr_name in ('v', 'y', 'p', 'e'):
-                macro = arr_name.upper() + '1'
-                code_eqs = re.sub(r'\b%s\[(\d+)\]' % arr_name,
-                                  '%s(\\1)' % macro, code_eqs)
+            # for arr_name in ('v', 'y', 'p', 'e'):
+            #     macro = arr_name.upper() + '1'
+            #     code_eqs = re.sub(r'\b%s\[(\d+)\]' % arr_name,
+            #                       '%s(\\1)' % macro, code_eqs)
 
             # Allocate v and ydot here, once.
             ydot = np.zeros(len(self.model.species))
             v = np.zeros(len(self.model.reactions))
             def rhs(t, y, p, e):
                 # Note that the C code sets v as a side effect
-                weave_inline(code_eqs, ['v', 't', 'y', 'p', 'e'],
-                             extra_compile_args=extra_compile_args)
+                cython_inline(code_eqs)
                 ydot[:] = self._model.stoichiometry_matrix.dot(v)
                 return ydot
 
@@ -361,7 +375,7 @@ class ScipyOdeSimulator(Simulator):
         """
         if not hasattr(cls, '_use_inline'):
             cls._use_inline = False
-            if weave_inline is not None:
+            if cython_inline is not None:
                 logger = get_logger(__name__)
                 extra_compile_args = []
                 # See comment in __init__ for why this must be EXTENDED_DEBUG.
@@ -372,11 +386,9 @@ class ScipyOdeSimulator(Simulator):
                         extra_compile_args.append('2>NUL')
                 try:
                     with _patch_distutils_logging(logger):
-                        weave_inline('int i=0; i=i;', force=1,
-                                     extra_compile_args=extra_compile_args)
+                        cython_inline('i=1', force=True)
                     cls._use_inline = True
-                except (weave.build_tools.CompileError,
-                        distutils.errors.CompileError, ImportError):
+                except (distutils.errors.CompileError, ImportError):
                     pass
 
     def _eqn_substitutions(self, eqns):

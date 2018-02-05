@@ -13,6 +13,7 @@ except ImportError:
 import pysb.bng
 import sympy
 from sympy.printing.lambdarepr import lambdarepr
+import scipy.sparse
 import re
 import numpy as np
 import warnings
@@ -29,12 +30,12 @@ CYTHON_DIRECTIVES = {
     'nonecheck': False,
     'initializedcheck': False,
 }
-CYTHON_PRE = '\n'.join(
+CYTHON_PRE = (
     ['cimport cython']
     + ['@cython.%s(%s)' % (d, v) for d, v in CYTHON_DIRECTIVES.items()]
-    + ['\ndef calc():']
+    + ['def calc():']
 )
-CYTHON_POST = 'calc()'
+CYTHON_POST = ['calc()']
 
 
 class ScipyOdeSimulator(Simulator):
@@ -157,6 +158,7 @@ class ScipyOdeSimulator(Simulator):
         s_y = sympy.IndexedBase('__y', len(self._model.species))
         s_p = sympy.IndexedBase('__p', len(self._model.parameters))
         s_e = sympy.IndexedBase('__e', len(expr_constant))
+        s_o = sympy.IndexedBase('__o', len(self._model.observables))
         species_subs = {
             sympy.Symbol('__s%d' % i): s_y[i]
             for i in range(len(self._model.species))
@@ -165,6 +167,7 @@ class ScipyOdeSimulator(Simulator):
             sympy.Symbol(p.name): s for p, s in zip(self._model.parameters, s_p)
         }
         param_subs.update(dict(zip(self._model.parameters, s_p)))
+        obs_subs = dict(zip(self._model.observables, s_o))
         expr_dynamic_subs = {
             sympy.Symbol(e.name): sympy.Symbol('__d%d' % i)
             for i, e in enumerate(expr_dynamic)
@@ -176,11 +179,16 @@ class ScipyOdeSimulator(Simulator):
             e.xreplace(expr_constant_subs).xreplace(expr_dynamic_subs)
             .xreplace(param_subs).xreplace(species_subs)
         )
-        reaction_rates = [replace_all(r['rate']) for r in model.reactions]
+        reaction_rates = [replace_all(r['rate']) for r in self._model.reactions]
         dynamic_expressions = [
-            replace_all(e.expand_expr(expand_observables=True))
+            replace_all(e.expand_expr()).xreplace(obs_subs)
             for e in expr_dynamic
         ]
+        om_shape = (len(self.model.observables), len(self.model.species))
+        obs_matrix = scipy.sparse.lil_matrix(om_shape, dtype=np.int64)
+        for i, obs in enumerate(self.model.observables):
+            obs_matrix[i, obs.species] = obs.coefficients
+        obs_matrix = obs_matrix.tocsr()
         self._calc_expr_constant = sympy.lambdify(
             [s_p],
             sympy.flatten([
@@ -202,27 +210,24 @@ class ScipyOdeSimulator(Simulator):
         if self._use_inline and not use_theano:
             # Prepare the string representations of the dynamic expressions and
             # RHS equations.
-            cdef_code = '\n'.join(['cdef double[:] __{0} = {0}'.format(n)
-                                   for n in 'v', 'y', 'p', 'e'])
-            de_eqs = '\n'.join(['  __d{0} = {1};'.format(i, lambdarepr(e))
-                                for i, e in enumerate(dynamic_expressions)])
-            rr_eqs = '\n'.join(['  __v[%d] = %s;' % (i, lambdarepr(r))
-                                for i, r in enumerate(reaction_rates)])
-            code_eqs = '\n'.join([cdef_code, CYTHON_PRE, de_eqs, rr_eqs,
-                                  CYTHON_POST])
+            cdef_code = ['cdef double[::1] __{0} = {0}'.format(n)
+                         for n in ('v', 'y', 'p', 'e', 'o')]
+            de_eqs = ['  cdef double __d{0} = {1};'.format(i, lambdarepr(e))
+                      for i, e in enumerate(dynamic_expressions)]
+            rr_eqs = ['  __v[%d] = %s;' % (i, lambdarepr(r))
+                      for i, r in enumerate(reaction_rates)]
+            code_eqs = '\n'.join(cdef_code + CYTHON_PRE + de_eqs + rr_eqs +
+                                 CYTHON_POST)
 
-            # for arr_name in ('v', 'y', 'p', 'e'):
-            #     macro = arr_name.upper() + '1'
-            #     code_eqs = re.sub(r'\b%s\[(\d+)\]' % arr_name,
-            #                       '%s(\\1)' % macro, code_eqs)
-
-            # Allocate v and ydot here, once.
+            # Allocate a few arrays here, once.
             ydot = np.zeros(len(self.model.species))
             v = np.zeros(len(self.model.reactions))
+            o = np.zeros(len(self.model.observables))
             def rhs(t, y, p, e):
+                o[:] = obs_matrix * y
                 # Note that the C code sets v as a side effect
                 cython_inline(code_eqs)
-                ydot[:] = self._model.stoichiometry_matrix.dot(v)
+                ydot[:] = self._model.stoichiometry_matrix * v
                 return ydot
 
             # Call rhs once just to trigger the weave C compilation step while
@@ -246,14 +251,16 @@ class ScipyOdeSimulator(Simulator):
             else:
                 de_syms = [sympy.Symbol('__d%d' % i)
                            for i in range(len(expr_dynamic))]
-                de_py = sympy.lambdify([s_y, s_p, s_e], dynamic_expressions)
+                de_py = sympy.lambdify([s_y, s_p, s_e, s_o],
+                                       dynamic_expressions)
                 rates_py = sympy.lambdify([s_y, s_p, s_e] + de_syms,
                                           reaction_rates)
 
             def rhs(t, y, p, e):
-                d = de_py(y, p, e)
+                o = obs_matrix * y
+                d = de_py(y, p, e, o)
                 v = rates_py(y, p, e, *d)
-                ydot = self._model.stoichiometry_matrix.dot(v)
+                ydot = self._model.stoichiometry_matrix * v
                 return ydot
 
         # JACOBIAN -----------------------------------------------

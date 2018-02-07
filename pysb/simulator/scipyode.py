@@ -30,12 +30,10 @@ CYTHON_DIRECTIVES = {
     'nonecheck': False,
     'initializedcheck': False,
 }
-CYTHON_PRE = (
-    ['cimport cython']
-    + ['@cython.%s(%s)' % (d, v) for d, v in CYTHON_DIRECTIVES.items()]
-    + ['def calc():']
+CYTHON_CONTEXT = ', '.join(
+    'cython.%s(%s)' % (d, v) for d, v in CYTHON_DIRECTIVES.items()
 )
-CYTHON_POST = ['calc()']
+CYTHON_PRE = ['cimport cython', 'with %s:' % CYTHON_CONTEXT]
 
 
 class ScipyOdeSimulator(Simulator):
@@ -216,8 +214,7 @@ class ScipyOdeSimulator(Simulator):
                       for i, e in enumerate(dynamic_expressions)]
             rr_eqs = ['  __v[%d] = %s;' % (i, lambdarepr(r))
                       for i, r in enumerate(reaction_rates)]
-            code_eqs = '\n'.join(cdef_code + CYTHON_PRE + de_eqs + rr_eqs +
-                                 CYTHON_POST)
+            code_eqs = '\n'.join(cdef_code + CYTHON_PRE + de_eqs + rr_eqs)
 
             # Allocate a few arrays here, once.
             ydot = np.zeros(len(self.model.species))

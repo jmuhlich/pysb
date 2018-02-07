@@ -208,13 +208,18 @@ class ScipyOdeSimulator(Simulator):
         if self._use_inline and not use_theano:
             # Prepare the string representations of the dynamic expressions and
             # RHS equations.
-            cdef_code = ['cdef double[::1] __{0} = {0}'.format(n)
-                         for n in ('v', 'y', 'p', 'e', 'o')]
-            de_eqs = ['  cdef double __d{0} = {1};'.format(i, lambdarepr(e))
+            vector_syms = ['v', 'y', 'p', 'e', 'o']
+            cdef_code = (
+                ['cdef double *__{0} = <double *> {0}.data'.format(n)
+                 for n in vector_syms]
+                + ['cdef double __d{0}'.format(i)
+                   for i in range(len(dynamic_expressions))]
+            )
+            de_eqs = ['__d{0} = {1};'.format(i, lambdarepr(e))
                       for i, e in enumerate(dynamic_expressions)]
-            rr_eqs = ['  __v[%d] = %s;' % (i, lambdarepr(r))
+            rr_eqs = ['__v[%d] = %s;' % (i, lambdarepr(r))
                       for i, r in enumerate(reaction_rates)]
-            code_eqs = '\n'.join(cdef_code + CYTHON_PRE + de_eqs + rr_eqs)
+            code_eqs = '\n'.join(cdef_code + de_eqs + rr_eqs)
 
             # Allocate a few arrays here, once.
             ydot = np.zeros(len(self.model.species))

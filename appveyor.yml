@@ -45,10 +45,9 @@ install:
   - 7z x Kappa.zip -y > nul
   - set "KAPPAPATH=%cd%\KappaBin\bin"
 
-  # StochKit
-  - appveyor DownloadFile "https://downloads.sourceforge.net/project/stochkit/StochKit2/StochKit2.0.10/StochKit2.0.10_WINDOWS_LITE.zip" -FileName stochkit.zip
-  - 7z x stochkit.zip -y > nul
-  - set "STOCHKITPATH=%cd%\StochKit2.0.10_WINDOWS_LITE"
+  - conda install -c SBMLTeam python-libsbml
+
+  - conda install -c alubbock graphviz bionetgen atomizer kappa stochkit-lite
 
   # Build PySB
   - python setup.py build --build-lib=build/lib

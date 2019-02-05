@@ -6,7 +6,6 @@ for :py:mod:`pysb.export`.
 """
 import pysb
 import pysb.bng
-from sympy import sympify
 from pysb.export import Exporter
 from sympy.printing.mathml import MathMLPrinter
 from sympy import Symbol
@@ -206,7 +205,7 @@ class SbmlExporter(Exporter):
                 compartment_name = 'default'
             _check(sp.setCompartment(compartment_name))
             _check(sp.setName(str(s).replace('% ', '._br_')))
-            _check(sp.setBoundaryCondition(False))
+            _check(sp.setBoundaryCondition(i in fixed_species_idx))
             _check(sp.setConstant(False))
             _check(sp.setHasOnlySubstanceUnits(True))
             if i not in initial_species_idx:

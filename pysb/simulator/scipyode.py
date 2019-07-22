@@ -220,6 +220,8 @@ class ScipyOdeSimulator(Simulator):
             rr_eqs = ['__v[%d] = %s;' % (i, lambdarepr(r))
                       for i, r in enumerate(reaction_rates)]
             code_eqs = '\n'.join(cdef_code + de_eqs + rr_eqs)
+            # Strip extraneous warning lines emitted by lambdarepr.
+            code_eqs = re.sub(r'  # [^\n]+\n', '', code_eqs)
 
             # Allocate a few arrays here, once.
             ydot = np.zeros(len(self.model.species))

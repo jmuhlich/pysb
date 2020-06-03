@@ -901,6 +901,47 @@ def _parse_group(model, line):
             obs.species.append(int(terms[1]) - 1)
 
 
+def _convert_tokens(tokens, local_dict, global_dict):
+    for pos, tok in enumerate(tokens):
+        if tok == (tokenize.NAME, 'if'):
+            tokens[pos] = (tokenize.NAME, '__bngl_if')
+            local_dict['__bngl_if'] = sympy.Function('bngl_if')
+        elif tok == (tokenize.OP, '^'):
+            tokens[pos] = (tokenize.OP, '**')
+        elif tok == (tokenize.NAME, 'and'):
+            tokens[pos] = (tokenize.OP, '&')
+        elif tok == (tokenize.NAME, 'or'):
+            tokens[pos] = (tokenize.OP, '|')
+    return tokens
+
+
+def parse_bngl_expr(text, *args, **kwargs):
+    """Convert a BNGL math expression string to a sympy Expr."""
+
+    # Translate a few operators with simple text replacement.
+    text = text.replace('()', '')
+    text = text.replace('==', '=')
+    # Use sympy to parse the text into an Expr.
+    trans = (
+        sympy_parser.standard_transformations
+        + (sympy_parser.convert_equals_signs, _convert_tokens)
+    )
+    expr = sympy_parser.parse_expr(text, *args, transformations=trans, **kwargs)
+    # Transforming 'if' to Piecewise requires subexpression rearrangement, so we
+    # use sympy's replace functionality rather than attempt it using text
+    # replacements above.
+    expr = expr.replace(
+        sympy.Function('bngl_if'),
+        lambda cond, t, f: sympy.Piecewise((t, cond), (f, True))
+    )
+    # Check for unsupported constructs.
+    if expr.has(sympy.Symbol('time')):
+        raise ValueError(
+            "Expressions referencing simulation time are not supported"
+        )
+    return expr
+
+
 class NoInitialConditionsError(RuntimeError):
     """Model initial_conditions is empty."""
     def __init__(self):
